@@ -3,106 +3,67 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
-<title>NNvisual — neural network visualizer</title>
-<meta name="description" content="Build a small neural network and watch it learn — live decision boundary, weights, and loss, in plain JavaScript with zero dependencies.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>NNvisual — visualize a neural network</title>
+<meta name="description" content="Pick a network — transformer, CNN, MLP, or diffusion — and watch the real thing run, train, and generate, live in your browser.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230e1011'/><circle cx='4' cy='8' r='1.6' fill='%23eeebe3'/><circle cx='12' cy='4.5' r='1.6' fill='%236a9955'/><circle cx='12' cy='11.5' r='1.6' fill='%23c25b4e'/><path d='M5.5 8 10.5 5M5.5 8 10.5 11' stroke='%235f5c55' stroke-width='1'/></svg>">
-<link rel="stylesheet" href="./css/nnvisual.css">
+<link rel="stylesheet" href="./css/base.css">
+<link rel="stylesheet" href="./css/home.css">
 </head>
-<body>
+<body class="home">
 
 <header class="topbar">
     <div class="brand">
         <span class="logo" aria-hidden="true"></span>
         <span class="brand-name">NNvisual</span>
-        <span class="brand-sub">watch a neural net learn</span>
+        <span class="brand-sub">every network, actually running</span>
     </div>
-    <div class="stats" aria-live="off">
-        <span class="stat"><span class="stat-k">epoch</span><span class="stat-v" id="stat-epoch">0</span></span>
-        <span class="stat"><span class="stat-k">loss</span><span class="stat-v" id="stat-loss">–</span></span>
-        <span class="stat"><span class="stat-k">acc</span><span class="stat-v" id="stat-acc">–</span></span>
-    </div>
+    <nav class="top-links">
+        <a href="https://github.com/JadenB9/NNvisual" target="_blank" rel="noopener noreferrer">source</a>
+    </nav>
 </header>
 
-<main class="layout">
-    <aside class="rail">
-        <section class="panel">
-            <h2 class="panel-title">data</h2>
-            <div class="seg" id="dataset-picker" role="group" aria-label="dataset">
-                <button class="seg-btn is-active" data-set="circles" type="button">circles</button>
-                <button class="seg-btn" data-set="moons" type="button">moons</button>
-                <button class="seg-btn" data-set="xor" type="button">xor</button>
-                <button class="seg-btn" data-set="spiral" type="button">spiral</button>
-            </div>
-            <label class="field">
-                <span class="field-k">noise <span class="field-v" id="noise-out">0.10</span></span>
-                <input type="range" id="noise" min="0" max="0.3" step="0.02" value="0.1">
-            </label>
-        </section>
+<main class="chooser">
+    <section class="panel-wrap" aria-labelledby="chooser-title">
+        <h1 id="chooser-title">Visualize a neural network:</h1>
 
-        <section class="panel">
-            <h2 class="panel-title">network</h2>
-            <div class="layers" id="layers" aria-label="hidden layers"></div>
-            <div class="layer-actions">
-                <button class="mini-btn" id="add-layer" type="button">+ layer</button>
-                <button class="mini-btn" id="remove-layer" type="button">&minus; layer</button>
-            </div>
-            <label class="field">
-                <span class="field-k">activation</span>
-                <select id="activation">
-                    <option value="tanh" selected>tanh</option>
-                    <option value="relu">relu</option>
-                    <option value="sigmoid">sigmoid</option>
-                </select>
-            </label>
-            <label class="field">
-                <span class="field-k">learning rate</span>
-                <select id="lr">
-                    <option value="0.01">0.01</option>
-                    <option value="0.03">0.03</option>
-                    <option value="0.1">0.1</option>
-                    <option value="0.3" selected>0.3</option>
-                    <option value="1">1</option>
-                    <option value="3">3</option>
-                </select>
-            </label>
-        </section>
+        <div class="choice-grid">
+            <a class="choice" href="./transformer.html" style="--d:0">
+                <h2>Language models</h2>
+                <p class="model">Transformer</p>
+                <p class="blurb">Understands and generates text</p>
+                <span class="go" aria-hidden="true">open &rarr;</span>
+            </a>
 
-        <section class="panel">
-            <h2 class="panel-title">run</h2>
-            <div class="run-row">
-                <button class="run-btn" id="play" type="button">train</button>
-                <button class="mini-btn" id="step" type="button">step</button>
-                <button class="mini-btn" id="reset" type="button">reset</button>
-            </div>
-        </section>
-    </aside>
+            <a class="choice" href="./cnn.html" style="--d:1">
+                <h2>Image detection</h2>
+                <p class="model">CNN</p>
+                <p class="blurb">Finds patterns in images</p>
+                <span class="go" aria-hidden="true">open &rarr;</span>
+            </a>
 
-    <section class="stage">
-        <div class="card card-fill">
-            <div class="card-head"><span>network</span><span class="card-note" id="shape-note">2 &rarr; 4 &rarr; 4 &rarr; 1</span></div>
-            <div class="diagram-wrap"><canvas id="diagram"></canvas></div>
-        </div>
-    </section>
+            <a class="choice" href="./mlp.html" style="--d:2">
+                <h2>Simple classification</h2>
+                <p class="model">Perceptron / MLP</p>
+                <p class="blurb">Sorts data into categories</p>
+                <span class="go" aria-hidden="true">open &rarr;</span>
+            </a>
 
-    <section class="side">
-        <div class="card">
-            <div class="card-head"><span>decision boundary</span></div>
-            <canvas id="boundary" width="640" height="640"></canvas>
-        </div>
-        <div class="card">
-            <div class="card-head"><span>training loss</span></div>
-            <canvas id="losschart" width="640" height="220"></canvas>
+            <a class="choice" href="./diffusion.html" style="--d:3">
+                <h2>Image generation</h2>
+                <p class="model">Diffusion model</p>
+                <p class="blurb">Creates images from noise</p>
+                <span class="go" aria-hidden="true">open &rarr;</span>
+            </a>
         </div>
     </section>
 </main>
 
 <footer class="foot">
-    <span>zero dependencies &middot; hand-written backprop &middot;
+    <span>zero dependencies &middot; real models running in your browser &middot;
         <a href="https://github.com/JadenB9/NNvisual" target="_blank" rel="noopener noreferrer">source</a>
     </span>
 </footer>
 
-<script type="module" src="./js/app/main.js"></script>
 </body>
 </html>
