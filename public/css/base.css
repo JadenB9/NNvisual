@@ -1,0 +1,178 @@
+/* NNvisual — shared chrome and the j4den.com design tokens. Every page keeps
+   this dark theme; per-page css builds on top. */
+
+@font-face {
+    font-family: "Space Grotesk";
+    src: url("../fonts/space-grotesk-700.woff2") format("woff2");
+    font-weight: 700;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Space Grotesk";
+    src: url("../fonts/space-grotesk-500.woff2") format("woff2");
+    font-weight: 500;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Plex Sans";
+    src: url("../fonts/ibm-plex-sans-400.woff2") format("woff2");
+    font-weight: 400;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Plex Sans";
+    src: url("../fonts/ibm-plex-sans-600.woff2") format("woff2");
+    font-weight: 600;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Plex Mono";
+    src: url("../fonts/ibm-plex-mono-400.woff2") format("woff2");
+    font-weight: 400;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Plex Mono";
+    src: url("../fonts/ibm-plex-mono-500.woff2") format("woff2");
+    font-weight: 500;
+    font-display: swap;
+}
+
+:root {
+    --bg: #0e1011;
+    --surface: #141719;
+    --surface-2: #1a1e21;
+    --surface-3: #21262a;
+    --border: #24292d;
+    --border-strong: #333a40;
+    --text: #cfccc4;
+    --text-bright: #eeebe3;
+    --muted: #8f8b83;
+    --faint: #5f5c55;
+    --accent: #ffffff;
+    --ok: #6a9955;
+    --err: #c25b4e;
+    --link-blue: #86c3d6;
+
+    --display: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+    --sans: "Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: "Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+    --bevel: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 0 100%);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ---------- topbar ---------- */
+
+.topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+}
+
+.brand {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 0;
+    color: inherit;
+    text-decoration: none;
+}
+
+.logo {
+    width: 10px;
+    height: 10px;
+    align-self: center;
+    background: var(--text-bright);
+    clip-path: var(--bevel);
+}
+
+.brand-name {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--text-bright);
+    letter-spacing: 0.01em;
+}
+
+.brand-sub {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--faint);
+    white-space: nowrap;
+}
+
+.top-links {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+}
+
+.top-links a {
+    color: var(--muted);
+    text-decoration: none;
+    border: 1px solid var(--border-strong);
+    padding: 4px 10px;
+    transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.top-links a:hover {
+    color: var(--text-bright);
+    border-color: var(--muted);
+}
+
+/* ---------- footer ---------- */
+
+.foot {
+    padding: 12px 20px 18px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--faint);
+    text-align: center;
+}
+
+.foot a { color: var(--link-blue); text-decoration: none; }
+.foot a:hover { text-decoration: underline; }
+
+/* ---------- shared bits ---------- */
+
+@media (max-width: 640px) {
+    .brand-sub { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
