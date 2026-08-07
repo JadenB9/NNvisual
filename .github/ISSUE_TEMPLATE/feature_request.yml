@@ -1,0 +1,16 @@
+name: Feature request
+description: An idea for a new dataset, control, or visualization
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: What should NNvisual do that it doesn't today?
+    validations:
+      required: true
+  - type: textarea
+    id: value
+    attributes:
+      label: Why it helps
+      description: What would this make easier to see or understand?

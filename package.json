@@ -1,0 +1,23 @@
+{
+    "name": "nnvisual",
+    "version": "0.1.0",
+    "description": "Interactive neural network visualizer — build a small MLP and watch it learn, live in the browser.",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "test": "node --test",
+        "lint": "eslint .",
+        "serve": "python3 -m http.server 4173 -d public"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/JadenB9/NNvisual.git"
+    },
+    "author": "Jaden Butler",
+    "license": "MIT",
+    "devDependencies": {
+        "@eslint/js": "^9.0.0",
+        "eslint": "^9.0.0",
+        "globals": "^16.0.0"
+    }
+}
