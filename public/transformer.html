@@ -29,15 +29,36 @@
 
 <main class="demo">
     <div class="row">
+        <section class="panel guide" aria-label="how this demo flows">
+            <ol class="flow">
+                <li><b>1 &middot; tokenize</b> your text becomes tokens &mdash; one per character, drawn from the 65 characters this model ever saw. Anything outside that alphabet is dropped.</li>
+                <li><b>2 &middot; embed</b> each token becomes 64 numbers, and its <em>position</em> in the window contributes 64 more; the two are added, so the same letter means something different early and late.</li>
+                <li><b>3 &middot; attend</b> four heads per layer look back along the context and pull in what they find &mdash; the arcs and the triangle below are those real weights.</li>
+                <li><b>4 &middot; sample</b> the output scores become a weighted dice roll, shaped by temperature, top-k and top-p. The sampled character appends to the text and the whole thing runs again.</li>
+            </ol>
+        </section>
+    </div>
+
+    <div class="row">
         <section class="panel gen-controls">
             <h2>generate</h2>
+            <label class="field"><span class="field-k">prompt preset</span>
+                <select id="preset">
+                    <option value="ROMEO:" selected>ROMEO:</option>
+                    <option value="JULIET:">JULIET:</option>
+                    <option value="First Citizen:">First Citizen:</option>
+                    <option value="KING HENRY V:">KING HENRY V:</option>
+                    <option value="">custom&hellip;</option>
+                </select>
+            </label>
             <label class="field"><span class="field-k">prompt</span>
                 <input type="text" id="prompt" value="ROMEO:" maxlength="64" spellcheck="false">
             </label>
-            <label class="field"><span class="field-k">temperature <span class="field-v" id="temp-out">0.8</span></span>
+            <p class="note prompt-note" id="prompt-note"></p>
+            <label class="field" id="temp-field"><span class="field-k">temperature <span class="field-v" id="temp-out">0.8</span></span>
                 <input type="range" id="temp" min="0.2" max="1.6" step="0.1" value="0.8">
             </label>
-            <label class="field"><span class="field-k">top-k</span>
+            <label class="field" id="topk-field"><span class="field-k">top-k</span>
                 <select id="topk">
                     <option value="0">off (full vocab)</option>
                     <option value="5">5</option>
@@ -45,6 +66,19 @@
                     <option value="20">20</option>
                 </select>
             </label>
+            <label class="field" id="topp-field"><span class="field-k">top-p (nucleus)</span>
+                <select id="topp">
+                    <option value="0" selected>off</option>
+                    <option value="0.95">0.95</option>
+                    <option value="0.9">0.9</option>
+                    <option value="0.8">0.8</option>
+                </select>
+            </label>
+            <p class="note">order: temperature reshapes the scores, then top-k keeps the k best, then top-p keeps the smallest set of those already worth p. What survives is renormalized &mdash; that is what the bars show and what gets sampled.</p>
+            <div class="btn-row">
+                <button class="seg-btn" id="greedy" aria-pressed="false">greedy: off</button>
+            </div>
+            <p class="note">greedy always takes the largest score, which none of the three can change &mdash; so they switch off while it is on.</p>
             <div class="btn-row">
                 <button class="run-btn" id="autoplay">generate</button>
                 <button class="mini-btn" id="step">step 1 token</button>
@@ -57,7 +91,7 @@
         </section>
 
         <section class="panel gen-text-panel">
-            <h2>the text so far <span class="note-inline">(the model sees the last 64 characters)</span></h2>
+            <h2>the text so far <span class="note-inline">(the model sees the last 64 characters)</span><span class="note-inline ctx-use" id="ctx-use"></span></h2>
             <div class="gen-text" id="gen-text"></div>
         </section>
 
@@ -71,7 +105,7 @@
     <div class="row">
         <section class="panel attn-panel">
             <h2>attention — where the model looks back
-                <span class="note-inline">arcs: what the <em>last</em> position attends to, in the selected head</span>
+                <span class="note-inline">arcs: what the <em>selected</em> position attends to, in the selected head</span>
             </h2>
             <canvas id="arcs" height="70"></canvas>
             <div class="chips" id="chips"></div>
@@ -79,7 +113,7 @@
                 <div>
                     <div class="btn-row" id="head-pick"></div>
                     <canvas id="attn-matrix" class="pix" width="256" height="256"></canvas>
-                    <p class="note">the causal triangle: row = position asking, column = position answering. Click a cell for its arithmetic.</p>
+                    <p class="note">the causal triangle: row = position asking, column = position answering; everything above the diagonal is the future, which is masked off. Click a cell for its arithmetic. <em>L1&middot;mean</em> and <em>L2&middot;mean</em> average that layer's four heads cell by cell.</p>
                 </div>
                 <div class="pair-detail">
                     <h3>score arithmetic</h3>
@@ -90,7 +124,7 @@
                         <div class="tile"><span>+ position</span><canvas id="tile-pos" class="pix" width="8" height="8"></canvas></div>
                         <div class="tile"><span>mlp acts</span><canvas id="tile-mlp" class="pix" width="16" height="16"></canvas></div>
                     </div>
-                    <p class="note">64 numbers per token drawn as 8&times;8 tiles — click any chip above to inspect it.</p>
+                    <p class="note">64 numbers per token drawn as 8&times;8 tiles — click any chip above to inspect it, and to ring its character on the embedding map below.</p>
                 </div>
             </div>
         </section>
@@ -100,7 +134,7 @@
         <section class="panel emb-panel">
             <h2>the embedding space — 65 characters, projected to 2-D</h2>
             <canvas id="emb-map" width="640" height="420"></canvas>
-            <p class="note">PCA of the learned 64-d character embeddings, computed here at load. Characters the model treats similarly sit together — vowels, digits, punctuation. Hover a character for its neighbors.</p>
+            <p class="note">PCA of the learned 64-d character embeddings, computed here at load. Characters the model treats similarly sit together — vowels, digits, punctuation. Hover a character for its neighbors, or click a token chip above to ring it here.</p>
         </section>
 
         <section class="panel cos-panel">
