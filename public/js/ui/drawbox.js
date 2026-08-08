@@ -15,7 +15,7 @@ export class DrawBox {
         canvas.style.touchAction = 'none';
         canvas.addEventListener('pointerdown', (e) => {
             e.preventDefault();
-            canvas.setPointerCapture(e.pointerId);
+            try { canvas.setPointerCapture(e.pointerId); } catch { /* synthetic pointers */ }
             this.undoStack.push(this.value.slice());
             if (this.undoStack.length > 30) this.undoStack.shift();
             this.drawing = true;

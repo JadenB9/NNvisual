@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Image generation — NNvisual</title>
+<meta name="description" content="Watch a real diffusion model destroy digits with noise and grow new ones back out of it, then drag through an autoencoder's 2-D latent space — all running live.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230e1011'/><circle cx='4' cy='8' r='1.6' fill='%23eeebe3'/><circle cx='12' cy='4.5' r='1.6' fill='%236a9955'/><circle cx='12' cy='11.5' r='1.6' fill='%23c25b4e'/><path d='M5.5 8 10.5 5M5.5 8 10.5 11' stroke='%235f5c55' stroke-width='1'/></svg>">
+<link rel="stylesheet" href="./css/base.css">
+<link rel="stylesheet" href="./css/demo.css">
+<link rel="stylesheet" href="./css/diffusion.css">
+</head>
+<body>
+
+<header class="topbar">
+    <a class="brand" href="./index.html">
+        <span class="logo" aria-hidden="true"></span>
+        <span class="brand-name">NNvisual</span>
+    </a>
+    <span class="page-chip">image generation &middot; diffusion + latent space</span>
+    <div id="net-status">loading&hellip;</div>
+</header>
+
+<div class="load-overlay" id="loader">
+    <span id="load-text">fetching models&hellip;</span>
+    <div class="load-bar"><div class="load-fill" id="load-fill"></div></div>
+</div>
+
+<main class="demo">
+    <div class="row tab-row">
+        <button class="seg-btn is-active" data-tab="diffusion" type="button">diffusion</button>
+        <button class="seg-btn" data-tab="latent" type="button">latent space — the encoder</button>
+    </div>
+
+    <div class="tab-page" id="tab-diffusion">
+        <div class="row">
+            <section class="panel fwd-panel">
+                <h2>forward — noise destroys an image</h2>
+                <div class="fwd-src">
+                    <div class="thumb-strip" id="fwd-samples"></div>
+                </div>
+                <div class="fwd-canvases">
+                    <div class="cap-col"><canvas id="fwd-x0" class="pix" width="140" height="140"></canvas><span>x&#8320; — clean</span></div>
+                    <span class="fwd-arrow">&rarr;</span>
+                    <div class="cap-col"><canvas id="fwd-xt" class="pix" width="140" height="140"></canvas><span>x<sub>t</sub> — noised</span></div>
+                </div>
+                <label class="field"><span class="field-k">t = <span class="field-v" id="fwd-t-out">0</span> of 200</span>
+                    <input type="range" id="fwd-t" min="0" max="200" value="0">
+                </label>
+                <div class="arith" id="fwd-math"></div>
+                <canvas id="schedule" width="360" height="120"></canvas>
+                <p class="note">the noise schedule &alpha;&#772;<sub>t</sub>: how much of the original survives at each step. Training shows the model images at every one of these noise levels.</p>
+            </section>
+
+            <section class="panel rev-panel">
+                <h2>reverse — a real model grows a digit out of noise</h2>
+                <div class="rev-controls">
+                    <div class="btn-row" id="class-pick"></div>
+                    <div class="rev-opts">
+                        <label class="field"><span class="field-k">steps</span>
+                            <select id="rev-steps"><option>15</option><option selected>30</option><option>50</option></select>
+                        </label>
+                        <label class="field"><span class="field-k">guidance <span class="field-v" id="guide-out">2.0</span></span>
+                            <input type="range" id="guide" min="0" max="4" step="0.5" value="2">
+                        </label>
+                        <label class="field"><span class="field-k">seed <span class="field-v" id="seed-out">7</span></span>
+                            <input type="range" id="seed" min="1" max="99" value="7">
+                        </label>
+                    </div>
+                    <div class="btn-row">
+                        <button class="run-btn" id="generate">generate</button>
+                        <button class="mini-btn" id="rev-step">step</button>
+                    </div>
+                </div>
+                <div class="rev-canvases">
+                    <div class="cap-col big"><canvas id="rev-xt" class="pix" width="168" height="168"></canvas><span id="rev-cap">x<sub>t</sub> — start from pure noise</span></div>
+                    <div class="cap-col"><canvas id="rev-x0" class="pix" width="112" height="112"></canvas><span>x&#770;&#8320; — the model's belief</span></div>
+                    <div class="cap-col"><canvas id="rev-eps" class="pix" width="112" height="112"></canvas><span>&epsilon;&#770; — noise it will remove</span></div>
+                </div>
+                <div class="film" id="film"></div>
+                <p class="note">every frame is one real DDIM step: the network looks at x<sub>t</sub>, predicts the clean image, and steps toward it. Hover the strip to scrub. Guidance pushes the prediction away from "any digit" toward <em>your</em> digit.</p>
+            </section>
+        </div>
+    </div>
+
+    <div class="tab-page" id="tab-latent" hidden>
+        <div class="row">
+            <section class="panel enc-panel">
+                <h2>encode — 784 pixels &rarr; 2 numbers</h2>
+                <canvas id="lat-draw" class="pix" width="168" height="168"></canvas>
+                <div class="btn-row">
+                    <button class="mini-btn" id="lat-clear">clear</button>
+                    <button class="mini-btn" id="lat-undo">undo</button>
+                </div>
+                <div class="thumb-strip" id="lat-samples"></div>
+                <button class="mini-btn" id="lat-shuffle">shuffle</button>
+                <div class="arith" id="lat-z">z = ( &ndash; , &ndash; )</div>
+                <p class="note">the encoder [784&rarr;256&rarr;64&rarr;2] squeezes your drawing to a single point. Everything the decoder can ever rebuild must fit through those two numbers — that bottleneck <em>is</em> the concept of an embedding.</p>
+            </section>
+
+            <section class="panel map-panel">
+                <h2>the latent plane — 1,000 real digits, encoded live at load</h2>
+                <canvas id="lat-map" width="560" height="560"></canvas>
+                <p class="note">colored by true label. <b>Drag anywhere</b> — the decoder renders the digit living at your cursor. Your drawing appears as the white ring.</p>
+            </section>
+
+            <section class="panel dec-panel">
+                <h2>decode — 2 numbers &rarr; an image</h2>
+                <canvas id="lat-out" class="pix" width="168" height="168"></canvas>
+                <div class="arith" id="dec-z"></div>
+                <h3>interpolate</h3>
+                <div class="btn-row">
+                    <button class="mini-btn" id="set-a">A = current</button>
+                    <button class="mini-btn" id="set-b">B = current</button>
+                </div>
+                <label class="field"><span class="field-k">A &rarr; B</span>
+                    <input type="range" id="lerp" min="0" max="100" value="50">
+                </label>
+                <p class="note">walking the straight line between two latent points morphs one digit into the other — the space between memorized examples is filled with in-between digits.</p>
+            </section>
+        </div>
+    </div>
+</main>
+
+<footer class="foot">
+    <span>real denoiser &middot; real bottleneck &middot; <a href="./index.html">all networks</a> &middot; <a href="https://github.com/JadenB9/NNvisual" target="_blank" rel="noopener noreferrer">source</a></span>
+</footer>
+
+<script type="module" src="./js/pages/diffusion.js"></script>
+</body>
+</html>

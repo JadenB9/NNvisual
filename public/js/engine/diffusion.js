@@ -79,6 +79,13 @@ export function createSampler(predict, { T = 200, steps = 30, classIdx = 0, guid
                 x0[i] = Math.min(1, Math.max(-1, (x[i] - sb * eps[i]) / sa));
             }
 
+            // Re-derive the noise from the clamped image before stepping.
+            // Otherwise a guided prediction that clamps keeps its over-shot
+            // eps and the excess compounds every step into saturation.
+            if (sb > 1e-4) {
+                for (let i = 0; i < 784; i++) eps[i] = (x[i] - sa * x0[i]) / sb;
+            }
+
             const saP = Math.sqrt(abarPrev);
             const sbP = Math.sqrt(1 - abarPrev);
             for (let i = 0; i < 784; i++) x[i] = saP * x0[i] + sbP * eps[i];
