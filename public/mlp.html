@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Simple classification — NNvisual</title>
+<meta name="description" content="Draw a digit and watch a real multilayer perceptron classify it live — every activation, every weight, then train it yourself on MNIST or your own handwriting.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230e1011'/><circle cx='4' cy='8' r='1.6' fill='%23eeebe3'/><circle cx='12' cy='4.5' r='1.6' fill='%236a9955'/><circle cx='12' cy='11.5' r='1.6' fill='%23c25b4e'/><path d='M5.5 8 10.5 5M5.5 8 10.5 11' stroke='%235f5c55' stroke-width='1'/></svg>">
+<link rel="stylesheet" href="./css/base.css">
+<link rel="stylesheet" href="./css/demo.css">
+<link rel="stylesheet" href="./css/mlp.css">
+</head>
+<body>
+
+<header class="topbar">
+    <a class="brand" href="./index.html">
+        <span class="logo" aria-hidden="true"></span>
+        <span class="brand-name">NNvisual</span>
+    </a>
+    <span class="page-chip">simple classification &middot; perceptron / mlp</span>
+    <div id="net-status">loading&hellip;</div>
+</header>
+
+<div class="load-overlay" id="loader">
+    <span id="load-text">fetching mnist subset&hellip;</span>
+    <div class="load-bar"><div class="load-fill" id="load-fill"></div></div>
+</div>
+
+<main class="demo">
+    <div class="row">
+        <section class="panel input-panel">
+            <h2>input — draw a digit</h2>
+            <canvas id="draw" class="pix" width="224" height="224"></canvas>
+            <div class="btn-row">
+                <button class="mini-btn" id="clear">clear</button>
+                <button class="mini-btn" id="undo">undo</button>
+            </div>
+            <h3>or load a real test digit</h3>
+            <div class="thumb-strip" id="samples"></div>
+            <button class="mini-btn" id="shuffle-samples">shuffle</button>
+            <h3>what the network sees</h3>
+            <div class="preview-row">
+                <canvas id="preview" class="pix" width="84" height="84"></canvas>
+                <p class="note">cropped, scaled to 20px, centered by mass &mdash; the same normalization MNIST uses. This 28&times;28 becomes the 784 input values.</p>
+            </div>
+        </section>
+
+        <section class="panel pipeline-panel">
+            <h2>the network, live <span id="shape-note" class="shape-note"></span></h2>
+            <div class="pipeline-wrap">
+                <canvas id="pipeline"></canvas>
+                <div class="inspector" id="inspector">
+                    <canvas id="insp-heat" class="pix" width="112" height="112"></canvas>
+                    <div class="insp-text" id="insp-text"></div>
+                </div>
+            </div>
+            <p class="note">hover any neuron &mdash; first-layer neurons show their 784 incoming weights as an image: <em>what that neuron looks for</em>. Edge color is weight sign, brightness is |weight &times; activation| &mdash; the signal actually flowing right now.</p>
+        </section>
+
+        <section class="panel output-panel">
+            <h2>output</h2>
+            <div class="pred" id="pred">&ndash;</div>
+            <div id="bars"></div>
+            <label class="toggle-row"><input type="checkbox" id="show-logits"> show raw logits (pre-softmax)</label>
+        </section>
+    </div>
+
+    <div class="row">
+        <section class="panel train-panel">
+            <h2>train it yourself &mdash; real gradient descent, in this tab</h2>
+            <div class="train-grid">
+                <div>
+                    <h3>architecture</h3>
+                    <div class="layers" id="layers"></div>
+                    <div class="btn-row">
+                        <button class="mini-btn" id="add-layer">+ layer</button>
+                        <button class="mini-btn" id="remove-layer">&minus; layer</button>
+                    </div>
+                    <p class="note" id="arch-note">editing the architecture resets to fresh random weights.</p>
+                    <button class="mini-btn" id="load-ref">restore pretrained net</button>
+                </div>
+                <div>
+                    <h3>training</h3>
+                    <label class="field"><span class="field-k">learning rate</span>
+                        <select id="lr">
+                            <option value="0.01">0.01</option>
+                            <option value="0.05">0.05</option>
+                            <option value="0.1" selected>0.1</option>
+                            <option value="0.3">0.3</option>
+                            <option value="1">1 (too hot)</option>
+                        </select>
+                    </label>
+                    <label class="field"><span class="field-k">batch size</span>
+                        <select id="batch">
+                            <option>16</option>
+                            <option selected>32</option>
+                            <option>64</option>
+                        </select>
+                    </label>
+                    <h3>training data</h3>
+                    <div class="radio-row" id="source">
+                        <label><input type="radio" name="src" value="mnist" checked> mnist (6,000)</label>
+                        <label><input type="radio" name="src" value="both"> mnist + your digits</label>
+                        <label><input type="radio" name="src" value="user"> your digits only</label>
+                    </div>
+                    <div class="btn-row">
+                        <button class="run-btn" id="train">train</button>
+                        <button class="mini-btn" id="step-epoch">1 epoch</button>
+                        <button class="mini-btn" id="reset-net">reset</button>
+                    </div>
+                </div>
+                <div class="chart-col">
+                    <h3>loss</h3>
+                    <canvas id="chart-loss" width="360" height="150"></canvas>
+                    <h3>accuracy on held-out test digits</h3>
+                    <canvas id="chart-acc" width="360" height="150"></canvas>
+                    <div class="stat-lines" id="train-stats"></div>
+                </div>
+                <div class="concept-col">
+                    <h3>gradient descent &mdash; the real loss curve under this step</h3>
+                    <canvas id="bowl" width="360" height="170"></canvas>
+                    <label class="field"><span class="field-k">what if the step size were&hellip; <span class="field-v" id="bowl-lr-out"></span></span>
+                        <input type="range" id="bowl-lr" min="0" max="100" value="50">
+                    </label>
+                    <p class="note">measured by evaluating the network's actual loss at points along the gradient direction &mdash; not a cartoon. Big steps overshoot the valley.</p>
+                    <h3>backpropagation</h3>
+                    <button class="mini-btn" id="replay-bp">replay last backward pass</button>
+                    <p class="note">sweeps the real gradients from the last batch backwards through the diagram: green edges are being pushed up, red pushed down.</p>
+                </div>
+            </div>
+            <h3>what layer 1 learns to look for (updates live while training)</h3>
+            <div class="weight-gallery" id="weight-gallery"></div>
+        </section>
+    </div>
+
+    <div class="row">
+        <section class="panel data-panel">
+            <h2>your own dataset &mdash; teach it your handwriting</h2>
+            <div class="data-grid">
+                <div>
+                    <p class="note">draw a digit above, pick its label, add it. Then switch training data to <em>your digits</em> and see how many examples it takes before the network learns <em>your</em> handwriting.</p>
+                    <div class="btn-row" id="label-pick"></div>
+                    <div class="btn-row">
+                        <button class="run-btn" id="add-example" disabled>add drawing</button>
+                    </div>
+                    <div class="btn-row">
+                        <button class="mini-btn" id="clear-data">delete all</button>
+                        <button class="mini-btn" id="export-data">export</button>
+                        <button class="mini-btn" id="import-data">import</button>
+                    </div>
+                    <textarea id="data-io" class="data-io" rows="4" hidden spellcheck="false"></textarea>
+                    <p class="note" id="data-note"></p>
+                </div>
+                <div class="gallery" id="gallery"></div>
+            </div>
+        </section>
+    </div>
+</main>
+
+<footer class="foot">
+    <span>every number on this page comes from a real forward or backward pass &middot; <a href="./index.html">all networks</a> &middot; <a href="https://github.com/JadenB9/NNvisual" target="_blank" rel="noopener noreferrer">source</a></span>
+</footer>
+
+<script type="module" src="./js/pages/mlp.js"></script>
+</body>
+</html>
