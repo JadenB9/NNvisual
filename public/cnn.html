@@ -29,6 +29,17 @@
 
 <main class="demo">
     <div class="row">
+        <section class="panel guide" aria-label="how this demo flows">
+            <ol class="flow">
+                <li><b>1 &middot; draw</b> sketch a digit below, or load a real MNIST test digit — it gets centered and scaled the way MNIST digits are, then handed to the network as 28&times;28 numbers.</li>
+                <li><b>2 &middot; kernels slide</b> eight learned 3&times;3 kernels slide across the image, and each one leaves behind a <em>feature map</em> — a picture of where that little pattern was found.</li>
+                <li><b>3 &middot; relu, then pooling</b> relu throws away the negative responses and keeps the positive evidence; max pooling then keeps only the strongest value in each 2&times;2 block, shrinking the map but holding on to what mattered.</li>
+                <li><b>4 &middot; the dense layer votes</b> the last maps flatten into 400 numbers and one dense layer votes on the ten digits. Curious how a single kernel gets its map? Scan mode below lets you <em>watch one kernel do its work</em>, one pixel at a time.</li>
+            </ol>
+        </section>
+    </div>
+
+    <div class="row">
         <section class="panel input-panel">
             <h2>input — draw a digit</h2>
             <canvas id="draw" class="pix" width="224" height="224"></canvas>
@@ -36,6 +47,7 @@
                 <button class="mini-btn" id="clear">clear</button>
                 <button class="mini-btn" id="undo">undo</button>
             </div>
+            <div class="btn-row" id="brush-pick" aria-label="brush thickness"></div>
             <h3>or load a real test digit</h3>
             <div class="thumb-strip" id="samples"></div>
             <button class="mini-btn" id="shuffle-samples">shuffle</button>
@@ -49,10 +61,12 @@
         <section class="panel stages-panel">
             <h2>the network, stage by stage <span class="shape-note">28&times;28 &rarr; conv 8&times;3&times;3 &rarr; pool &rarr; conv 16&times;3&times;3 &rarr; pool &rarr; dense</span></h2>
 
+            <label class="toggle-row"><input type="checkbox" id="pre-relu"> show the conv values <em>before</em> relu</label>
+
             <div class="stage-block">
                 <div class="stage-head"><span class="stage-name">conv 1 — 8 learned 3&times;3 kernels</span><span class="note-inline">each kernel slides over the input; green weights add, red subtract</span></div>
                 <div class="k-row" id="kernels1"></div>
-                <div class="stage-head sub"><span class="stage-name">&rarr; 8 feature maps (after relu)</span></div>
+                <div class="stage-head sub"><span class="stage-name" id="cap1">&rarr; 8 feature maps (after relu)</span><span class="note-inline">click any map to inspect it</span></div>
                 <div class="m-row" id="maps1"></div>
             </div>
 
@@ -62,7 +76,7 @@
             </div>
 
             <div class="stage-block">
-                <div class="stage-head"><span class="stage-name">conv 2 — 16 kernels over all 8 maps &rarr; relu</span></div>
+                <div class="stage-head"><span class="stage-name" id="cap2">conv 2 — 16 kernels over all 8 maps &rarr; relu</span></div>
                 <div class="m-row" id="maps2"></div>
             </div>
 
@@ -71,13 +85,28 @@
                 <div class="m-row" id="pool2"></div>
                 <canvas id="flat" class="pix flat-strip" width="400" height="1"></canvas>
             </div>
+
+            <div class="inspector" id="inspector" hidden>
+                <div class="insp-head">
+                    <span class="stage-name" id="insp-cap"></span>
+                    <button class="mini-btn" id="insp-close">close</button>
+                </div>
+                <div class="insp-body">
+                    <canvas id="insp-map" class="pix insp-canvas"></canvas>
+                    <div class="insp-kernel" id="insp-kernel-wrap">
+                        <canvas id="insp-kernel" class="pix" width="3" height="3"></canvas>
+                        <span class="note-inline">the 3&times;3 kernel that made it</span>
+                    </div>
+                    <p class="note" id="insp-note"></p>
+                </div>
+            </div>
         </section>
 
         <section class="panel output-panel">
             <h2>output</h2>
             <div class="pred" id="pred">&ndash;</div>
             <div id="bars"></div>
-            <p class="note">the dense layer reads all 400 flattened values and votes.</p>
+            <p class="note">the dense layer reads all 400 flattened values at once and votes; softmax turns the ten scores into these probabilities.</p>
         </section>
     </div>
 
@@ -87,7 +116,7 @@
             <div class="scan-grid">
                 <div>
                     <canvas id="scan-input" class="pix" width="168" height="168"></canvas>
-                    <p class="note">the 3&times;3 window walks the image&hellip;</p>
+                    <p class="note">the 3&times;3 window walks the image, left to right and top to bottom&hellip;</p>
                 </div>
                 <div class="scan-mid">
                     <div class="k-pick-row">
@@ -98,7 +127,7 @@
                 </div>
                 <div>
                     <canvas id="scan-map" class="pix" width="156" height="156"></canvas>
-                    <p class="note">&hellip;painting one feature-map pixel per step</p>
+                    <p class="note">&hellip;painting one feature-map pixel per step. 26&times;26 = 676 positions in all; this is exactly the map above, drawn slowly.</p>
                 </div>
             </div>
             <div class="btn-row">
@@ -109,6 +138,9 @@
                     <input type="range" id="scan-speed" min="1" max="24" value="6">
                 </label>
             </div>
+            <label class="field scan-scrub"><span class="field-k">position <span class="field-v" id="scan-pos-v">0 / 675</span></span>
+                <input type="range" id="scan-pos" min="0" max="675" value="0">
+            </label>
         </section>
 
         <section class="panel play-panel">
@@ -117,10 +149,12 @@
                 <div>
                     <div class="kernel-edit" id="kernel-edit"></div>
                     <div class="btn-row" id="kernel-presets"></div>
+                    <label class="toggle-row"><input type="checkbox" id="kernel-norm"> normalize</label>
+                    <p class="note" id="norm-note">raw values are used as typed.</p>
                 </div>
                 <div>
                     <canvas id="play-out" class="pix" width="156" height="156"></canvas>
-                    <p class="note">your kernel convolved over your drawing — green positive response, red negative. Edge kernels light up where brightness changes; that is the whole trick conv nets build on.</p>
+                    <p class="note">your kernel convolved over your drawing — green positive response, red negative. Edge kernels light up where brightness changes; that is the whole trick conv nets build on. The eight kernels above were not designed like this — training found them.</p>
                 </div>
             </div>
         </section>
