@@ -29,6 +29,17 @@
 
 <main class="demo">
     <div class="row">
+        <section class="panel guide" aria-label="how this demo flows">
+            <ol class="flow">
+                <li><b>1 · draw</b> sketch a digit below, or load a real MNIST test digit — it gets centered and scaled exactly the way MNIST digits are.</li>
+                <li><b>2 · forward pass</b> the 28&times;28 unrolls into 784 numbers that flow left&rarr;right; node brightness is the live activation, edge color the weight's sign.</li>
+                <li><b>3 · the vote</b> ten output scores pass through softmax to become the probabilities on the right — the biggest bar is the prediction.</li>
+                <li><b>4 · make it yours</b> train the net in this tab (watch loss fall and features form), reshape its layers, or teach it <em>your</em> handwriting at the bottom.</li>
+            </ol>
+        </section>
+    </div>
+
+    <div class="row">
         <section class="panel input-panel">
             <h2>input — draw a digit</h2>
             <canvas id="draw" class="pix" width="224" height="224"></canvas>
@@ -36,6 +47,7 @@
                 <button class="mini-btn" id="clear">clear</button>
                 <button class="mini-btn" id="undo">undo</button>
             </div>
+            <div class="btn-row" id="brush-pick" aria-label="brush thickness"></div>
             <h3>or load a real test digit</h3>
             <div class="thumb-strip" id="samples"></div>
             <button class="mini-btn" id="shuffle-samples">shuffle</button>
@@ -138,8 +150,16 @@
         <section class="panel data-panel">
             <h2>your own dataset &mdash; teach it your handwriting</h2>
             <div class="data-grid">
+                <div class="data-draw-col">
+                    <canvas id="data-draw" class="pix" width="168" height="168"></canvas>
+                    <div class="btn-row">
+                        <button class="mini-btn" id="data-clear">clear</button>
+                        <button class="mini-btn" id="data-undo">undo</button>
+                    </div>
+                    <p class="note">draw here, pick the label, press add &mdash; the box clears itself so you can chain digit after digit.</p>
+                </div>
                 <div>
-                    <p class="note">draw a digit above, pick its label, add it. Then switch training data to <em>your digits</em> and see how many examples it takes before the network learns <em>your</em> handwriting.</p>
+                    <p class="note">collect a few of each digit, then switch the training data to <em>your digits</em> and watch how many examples it takes before the network learns <em>your</em> handwriting.</p>
                     <div class="btn-row" id="label-pick"></div>
                     <div class="btn-row">
                         <button class="run-btn" id="add-example" disabled>add drawing</button>

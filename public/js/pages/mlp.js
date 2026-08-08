@@ -42,6 +42,29 @@ const lossChart = new LineChart($('chart-loss'), [{ color: '#86c3d6', label: 'lo
 const accChart = new LineChart($('chart-acc'), [{ color: '#6a9955', label: 'test acc' }], { yMax: 1 });
 
 const draw = new DrawBox($('draw'), { onchange: onDrawChange });
+const dataDraw = new DrawBox($('data-draw'), { onchange: updateAddButton });
+
+const BRUSHES = [['thin', 0.75], ['medium', 1.15], ['thick', 1.7]];
+function buildBrushPicker() {
+    const box = $('brush-pick');
+    BRUSHES.forEach(([name, sigma], i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'seg-btn' + (i === 1 ? ' is-active' : '');
+        b.textContent = name;
+        b.title = `${name} strokes in both draw boxes`;
+        b.addEventListener('click', () => {
+            draw.setBrush(sigma);
+            dataDraw.setBrush(sigma);
+            box.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('is-active', x === b));
+        });
+        box.append(b);
+    });
+}
+
+function updateAddButton() {
+    $('add-example').disabled = dataDraw.empty || state.pickedLabel == null;
+}
 
 // ---------- boot ----------
 (async function boot() {
@@ -71,6 +94,7 @@ const draw = new DrawBox($('draw'), { onchange: onDrawChange });
 
     loadUserData();
     buildRefNet();
+    buildBrushPicker();
     renderLayerEditor();
     renderLabelPick();
     renderGallery();
@@ -117,7 +141,6 @@ function resetTrainingState() {
 function onDrawChange(value) {
     state.input = preprocessDrawing(value);
     drawHeat($('preview'), state.input, 28, 28, { max: 1 });
-    $('add-example').disabled = draw.empty || state.pickedLabel == null;
     classify(true);
 }
 
@@ -485,7 +508,7 @@ function renderLabelPick() {
             state.pickedLabel = d;
             box.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('is-active', x === b));
             $('add-example').textContent = `add drawing as “${d}”`;
-            $('add-example').disabled = draw.empty;
+            updateAddButton();
         });
         box.append(b);
     }
@@ -629,9 +652,10 @@ $('bowl-lr').addEventListener('input', (e) => {
 });
 
 $('add-example').addEventListener('click', () => {
-    if (state.pickedLabel == null || draw.empty) return;
+    if (state.pickedLabel == null || dataDraw.empty) return;
+    const processed = preprocessDrawing(dataDraw.value);
     const px = new Array(784);
-    for (let p = 0; p < 784; p++) px[p] = Math.round(state.input[p] * 255);
+    for (let p = 0; p < 784; p++) px[p] = Math.round(processed[p] * 255);
     if (state.userData.length >= 500) {
         $('data-note').textContent = 'capped at 500 examples — delete some first.';
         return;
@@ -641,8 +665,11 @@ $('add-example').addEventListener('click', () => {
     renderGallery();
     updateStatus();
     $('data-note').textContent = `added a “${state.pickedLabel}” — ${state.userData.length} total. Draw the next one!`;
-    draw.clear();
+    dataDraw.clear();
 });
+
+$('data-clear').addEventListener('click', () => dataDraw.clear());
+$('data-undo').addEventListener('click', () => dataDraw.undo());
 
 $('clear-data').addEventListener('click', () => {
     state.userData = [];

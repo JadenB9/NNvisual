@@ -102,19 +102,16 @@ function refresh(fromStep) {
 function renderText() {
     const box = $('gen-text');
     const full = state.model.decode(state.tokens);
-    const promptText = full.slice(0, state.promptLen);
-    const genText = full.slice(state.promptLen, -1);
-    const lastCh = full.slice(-1);
     box.textContent = '';
-    box.append(document.createTextNode(promptText));
-    box.append(document.createTextNode(genText));
     if (state.tokens.length > state.promptLen) {
+        // highlight only the freshly sampled character
+        box.append(document.createTextNode(full.slice(0, -1)));
         const s = document.createElement('span');
         s.className = 'fresh';
-        s.textContent = lastCh;
+        s.textContent = full.slice(-1);
         box.append(s);
     } else {
-        box.append(document.createTextNode(lastCh));
+        box.append(document.createTextNode(full));
     }
     box.scrollTop = box.scrollHeight;
 }

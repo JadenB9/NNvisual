@@ -62,19 +62,26 @@ export class Pipeline {
             const spacing = Math.min(usable / Math.max(count - 1, 1), 30);
             return h / 2 + (idx - (count - 1) / 2) * spacing;
         };
-        this.geom = { w, h, dpr, gridX, gridSize, stripX, xs, nodeY, stripTop: 34, stripH: h - 68 };
+        // circles shrink when a layer is crowded so they never overlap
+        const nodeR = (count) => {
+            const usable = h - 70;
+            const spacing = Math.min(usable / Math.max(count - 1, 1), 30);
+            return Math.max(3, Math.min(8, spacing * 0.42));
+        };
+        this.geom = { w, h, dpr, gridX, gridSize, stripX, xs, nodeY, nodeR, stripTop: 34, stripH: h - 68 };
         return this.geom;
     }
 
     nodeAt(px, py) {
         if (!this.geom || !this.net) return null;
-        const { xs, nodeY } = this.geom;
+        const { xs, nodeY, nodeR } = this.geom;
         for (let l = 1; l < this.net.sizes.length; l++) {
             const count = this.net.sizes[l];
+            const hit = Math.max(10, nodeR(count) + 4);
             for (let i = 0; i < count; i++) {
                 const dx = px - xs[l];
                 const dy = py - nodeY(count, i);
-                if (dx * dx + dy * dy < 144) return { layer: l, index: i };
+                if (dx * dx + dy * dy < hit * hit) return { layer: l, index: i };
             }
         }
         return null;
@@ -149,36 +156,44 @@ export class Pipeline {
         }
 
         // ---- edges ----
-        // strip -> first layer: strongest |w * x| contributions per neuron
+        // strip -> first layer: strongest contributions per neuron. When the
+        // canvas is empty (or a layer is relu-dead) fall back to weight
+        // magnitude so every connection in the architecture stays visible.
         const inActs = acts ? acts.acts[0] : null;
         const firstW = net.weights[0];
         const n1 = sizes[1];
+        const r1 = g.nodeR(n1);
         for (let j = 0; j < n1; j++) {
             const picks = topContrib(firstW, inActs, j, 784, 5);
             for (const p of picks) {
                 const sy = g.stripTop + (p.i / 783) * g.stripH;
-                this.edge(ctx, g.stripX + 8, sy, g.xs[1] - 9, g.nodeY(n1, j), p.w, p.m, 1, bpActive, grads, 0, j, p.i);
+                this.edge(ctx, g.stripX + 8, sy, g.xs[1] - r1 - 1, g.nodeY(n1, j), p.w, p.m, 1, bpActive, grads, 0, j, p.i);
             }
         }
-        // later layers: all edges
+        // later layers: every edge, always
         for (let l = 1; l < sizes.length - 1; l++) {
             const wArr = net.weights[l];
             const from = sizes[l];
             const to = sizes[l + 1];
+            const rf = g.nodeR(from);
+            const rt = g.nodeR(to);
             const src = acts ? acts.acts[l] : null;
+            let srcPeak = 0;
+            if (src) for (let i = 0; i < from; i++) srcPeak = Math.max(srcPeak, Math.abs(src[i]));
+            const useActs = srcPeak > 1e-6;
+            const signal = (j, i) => {
+                const wv = Math.abs(wArr[j * from + i]);
+                return useActs ? wv * (Math.abs(src[i]) / srcPeak) : wv;
+            };
             let max = 1e-9;
             for (let j = 0; j < to; j++) {
-                for (let i = 0; i < from; i++) {
-                    const m = Math.abs(wArr[j * from + i] * (src ? src[i] : 1));
-                    if (m > max) max = m;
-                }
+                for (let i = 0; i < from; i++) max = Math.max(max, signal(j, i));
             }
             for (let j = 0; j < to; j++) {
                 for (let i = 0; i < from; i++) {
                     const wv = wArr[j * from + i];
-                    const m = Math.abs(wv * (src ? src[i] : 1)) / max;
-                    if (m < 0.04) continue;
-                    this.edge(ctx, g.xs[l] + 9, g.nodeY(from, i), g.xs[l + 1] - 9, g.nodeY(to, j), wv, m, l + 1, bpActive, grads, l, j, i);
+                    const m = signal(j, i) / max;
+                    this.edge(ctx, g.xs[l] + rf + 1, g.nodeY(from, i), g.xs[l + 1] - rt - 1, g.nodeY(to, j), wv, m, l + 1, bpActive, grads, l, j, i);
                 }
             }
         }
@@ -198,6 +213,7 @@ export class Pipeline {
         ctx.font = '12px "Plex Mono", ui-monospace, monospace';
         for (let l = 1; l < sizes.length; l++) {
             const count = sizes[l];
+            const radius = g.nodeR(count);
             const vals = acts ? acts.acts[l] : null;
             let peak = 1e-9;
             if (vals) for (let i = 0; i < count; i++) peak = Math.max(peak, Math.abs(vals[i]));
@@ -206,7 +222,7 @@ export class Pipeline {
                 const y = g.nodeY(count, i);
                 const v = vals ? Math.abs(vals[i]) / peak : 0;
                 ctx.beginPath();
-                ctx.arc(x, y, 8, 0, Math.PI * 2);
+                ctx.arc(x, y, radius, 0, Math.PI * 2);
                 ctx.fillStyle = `rgba(238,235,227,${0.06 + v * 0.85})`;
                 ctx.fill();
                 ctx.strokeStyle = this.hover && this.hover.layer === l && this.hover.index === i
@@ -217,7 +233,7 @@ export class Pipeline {
                     ctx.fillStyle = '#8f8b83';
                     ctx.textAlign = 'left';
                     ctx.textBaseline = 'middle';
-                    ctx.fillText(String(i), x + 14, y);
+                    ctx.fillText(String(i), x + radius + 6, y);
                 }
             }
         }
@@ -328,12 +344,19 @@ export class Pipeline {
 }
 
 function topContrib(w, x, j, nIn, k) {
+    // active pixels weight the pick; a blank canvas falls back to |w| so the
+    // wiring never disappears
+    let hasInk = false;
+    if (x) {
+        for (let i = 0; i < nIn; i++) {
+            if (x[i] >= 0.05) { hasInk = true; break; }
+        }
+    }
     const picks = [];
     for (let i = 0; i < nIn; i++) {
-        const xv = x ? x[i] : 0;
-        if (xv < 0.05) continue;
         const wv = w[j * nIn + i];
-        const m = Math.abs(wv * xv);
+        const m = hasInk ? (x[i] >= 0.05 ? Math.abs(wv * x[i]) : 0) : Math.abs(wv);
+        if (m === 0) continue;
         if (picks.length < k) {
             picks.push({ i, w: wv, m });
             picks.sort((a, b) => a.m - b.m);
@@ -342,7 +365,6 @@ function topContrib(w, x, j, nIn, k) {
             picks.sort((a, b) => a.m - b.m);
         }
     }
-    // normalize magnitudes for drawing
     const peak = picks.length ? picks[picks.length - 1].m : 1;
-    return picks.map((p) => ({ ...p, m: p.m / (peak || 1) }));
+    return picks.map((p) => ({ ...p, m: (p.m / (peak || 1)) * (hasInk ? 1 : 0.4) }));
 }
