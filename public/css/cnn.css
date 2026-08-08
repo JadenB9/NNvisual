@@ -64,6 +64,21 @@
 
 .m-row canvas { cursor: crosshair; }
 
+.toggle-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin: 12px 0 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.toggle-row input { accent-color: var(--text-bright); }
+
+.toggle-row em { color: var(--text-bright); font-style: normal; }
+
 .flat-strip {
     width: 100%;
     height: 10px;
@@ -71,6 +86,59 @@
     border: 1px solid var(--border);
     border-radius: 3px;
 }
+
+/* ---------- feature-map inspector ---------- */
+
+.inspector {
+    border-top: 1px solid var(--border);
+    margin-top: 14px;
+    padding-top: 10px;
+}
+
+.inspector[hidden] { display: none; }
+
+.insp-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 9px;
+}
+
+.insp-body {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+.insp-canvas {
+    width: 168px;
+    height: 168px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--bg);
+    flex-shrink: 0;
+}
+
+.insp-kernel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.insp-kernel[hidden] { display: none; }
+
+.insp-kernel canvas {
+    width: 84px;
+    height: 84px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+}
+
+.insp-body .note { flex: 1; min-width: 160px; margin: 0; }
 
 .output-panel { width: 250px; flex-shrink: 0; }
 
@@ -130,6 +198,10 @@
 .arith b { color: var(--text-bright); font-weight: 500; }
 
 .scan-speed { width: 130px; margin: 0 0 0 auto; }
+
+.scan-scrub { margin-top: 12px; }
+
+.scan-scrub .field-k { display: flex; gap: 8px; }
 
 /* ---------- kernel playground ---------- */
 
