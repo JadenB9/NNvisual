@@ -1,0 +1,119 @@
+/* Diffusion + latent space page. */
+
+.tab-row { gap: 8px; }
+
+.fwd-panel { width: 420px; flex-shrink: 0; }
+
+.fwd-canvases {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 10px 0;
+}
+
+.fwd-arrow { color: var(--faint); font-size: 20px; }
+
+.cap-col {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--faint);
+}
+
+.cap-col canvas {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+}
+
+#schedule {
+    width: 100%;
+    height: auto;
+    margin-top: 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.arith {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: var(--muted);
+    white-space: pre-wrap;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 11px;
+    margin-top: 8px;
+}
+
+.arith b { color: var(--text-bright); font-weight: 500; }
+
+/* reverse */
+
+.rev-panel { flex: 1; min-width: 0; }
+
+.rev-controls { display: flex; flex-direction: column; gap: 8px; }
+
+.rev-opts { display: flex; gap: 16px; }
+.rev-opts .field { flex: 1; margin-top: 0; }
+
+#class-pick .seg-btn { min-width: 34px; }
+
+.rev-canvases {
+    display: flex;
+    gap: 16px;
+    align-items: flex-end;
+    margin: 12px 0;
+}
+
+.film {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    min-height: 34px;
+}
+
+.film canvas {
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    cursor: crosshair;
+}
+
+.film canvas.is-cur { border-color: var(--text-bright); }
+
+/* latent */
+
+.enc-panel { width: 300px; flex-shrink: 0; }
+.map-panel { flex: 1; min-width: 0; }
+.dec-panel { width: 300px; flex-shrink: 0; }
+
+#lat-draw, #lat-out {
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    cursor: crosshair;
+}
+
+#lat-out { cursor: default; }
+
+#lat-map {
+    width: min(100%, 560px);
+    height: auto;
+    display: block;
+    margin: 0 auto;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: crosshair;
+    touch-action: none;
+}
+
+@media (max-width: 980px) {
+    .fwd-panel, .enc-panel, .dec-panel { width: 100%; }
+}

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 import { parseWeights } from '../public/js/engine/weights.js';
 import { MLP } from '../public/js/engine/mlp.js';
+import { ConvNet } from '../public/js/engine/conv.js';
 import { tEmbed, createSampler, makeSchedule } from '../public/js/engine/diffusion.js';
 import { mulberry32 } from '../public/js/engine/rng.js';
 
@@ -85,4 +86,38 @@ test('a full DDIM run through the eps wrapper stays finite and image-like', () =
     }
     // a digit image is mostly background
     assert.ok(dark > 300, `only ${dark} background pixels — not image-like`);
+});
+
+// The gate that would have caught the sampler's eps re-derivation bug: the
+// shipped CNN must recognize what the shipped diffusion model draws.
+test('the CNN recognizes one generated sample of every digit', () => {
+    const { meta, predictX0 } = loadDenoiser();
+    const alphaBar = makeSchedule(meta.T);
+    const cnn = new ConvNet().loadTensors(
+        parseWeights(loadBin('../public/data/weights/cnn-ref.bin')).tensors);
+
+    const predictEps = (xt, t, cls) => {
+        const x0 = predictX0(xt, t, cls);
+        const sa = Math.sqrt(alphaBar[t]);
+        const sb = Math.sqrt(1 - alphaBar[t]);
+        const eps = new Float32Array(784);
+        for (let i = 0; i < 784; i++) eps[i] = (xt[i] - sa * x0[i]) / sb;
+        return eps;
+    };
+
+    let hits = 0;
+    for (let d = 0; d < 10; d++) {
+        const sampler = createSampler(predictEps, {
+            T: meta.T, steps: 20, classIdx: d, guidance: 2, seed: 100 + d * 10,
+        });
+        let last = null;
+        while (!sampler.done) last = sampler.step();
+        const img = new Float32Array(784);
+        for (let i = 0; i < 784; i++) img[i] = (last.x0Hat[i] + 1) / 2;
+        const probs = cnn.forward(img).probs;
+        let best = 0;
+        for (let o = 1; o < 10; o++) if (probs[o] > probs[best]) best = o;
+        if (best === d) hits++;
+    }
+    assert.ok(hits >= 8, `only ${hits}/10 samples recognized as their class`);
 });
