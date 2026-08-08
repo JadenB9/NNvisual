@@ -28,6 +28,17 @@
 </div>
 
 <main class="demo">
+    <div class="row">
+        <section class="panel guide" aria-label="how this demo flows">
+            <ol class="flow">
+                <li><b>1 &middot; the schedule</b> a fixed recipe fades an image into noise a little at a time, until step 200 leaves nothing of the original behind.</li>
+                <li><b>2 &middot; the denoiser</b> the model gets a noisy image at <em>any</em> level and answers one question: what clean image is hiding in there? That guess is all it does.</li>
+                <li><b>3 &middot; stepping</b> move a little toward that guess, re-noise slightly less, ask again. Thirty rounds of that grows a digit out of pure static.</li>
+                <li><b>4 &middot; steering</b> guidance amplifies the gap between the digit you asked for and "any digit at all". The <em>latent space</em> tab takes the other route: an encoder squeezes 784 pixels into 2 numbers a decoder rebuilds from.</li>
+            </ol>
+        </section>
+    </div>
+
     <div class="row tab-row">
         <button class="seg-btn is-active" data-tab="diffusion" type="button">diffusion</button>
         <button class="seg-btn" data-tab="latent" type="button">latent space — the encoder</button>
@@ -50,7 +61,7 @@
                 </label>
                 <div class="arith" id="fwd-math"></div>
                 <canvas id="schedule" width="360" height="120"></canvas>
-                <p class="note">the noise schedule &alpha;&#772;<sub>t</sub>: how much of the original survives at each step. Training shows the model images at every one of these noise levels.</p>
+                <p class="note">the noise schedule &alpha;&#772;<sub>t</sub>: the fraction of the original image still standing at each step. Drag t and watch the digit dissolve. Training shows the model images from every point on this curve, which is why it can be asked to denoise at any level later.</p>
             </section>
 
             <section class="panel rev-panel">
@@ -61,16 +72,40 @@
                         <label class="field"><span class="field-k">steps</span>
                             <select id="rev-steps"><option>15</option><option selected>30</option><option>50</option></select>
                         </label>
-                        <label class="field"><span class="field-k">guidance <span class="field-v" id="guide-out">2.0</span></span>
+                        <label class="field" id="guide-field"><span class="field-k">guidance <span class="field-v" id="guide-out">2.0</span></span>
                             <input type="range" id="guide" min="0" max="4" step="0.5" value="2">
                         </label>
                         <label class="field"><span class="field-k">seed <span class="field-v" id="seed-out">7</span></span>
                             <input type="range" id="seed" min="1" max="99" value="7">
                         </label>
+                        <label class="field"><span class="field-k">speed <span class="field-v" id="speed-out">90</span> ms/step</span>
+                            <input type="range" id="rev-speed" min="40" max="300" step="10" value="90">
+                        </label>
                     </div>
+                    <p class="note" id="any-note" hidden>&ldquo;any&rdquo; <em>is</em> the null class &mdash; the same one guidance normally contrasts against. Asking it to push away from itself leaves no direction, so the slider is off.</p>
                     <div class="btn-row">
                         <button class="run-btn" id="generate">generate</button>
                         <button class="mini-btn" id="rev-step">step</button>
+                        <button class="mini-btn" id="grid-run">3&times;3 grid</button>
+                    </div>
+                </div>
+
+                <div class="img2img">
+                    <div class="i2i-draw">
+                        <canvas id="rev-draw" class="pix" width="112" height="112"></canvas>
+                        <span class="i2i-cap">start from your drawing</span>
+                        <div class="btn-row">
+                            <button class="mini-btn" id="rev-draw-clear">clear</button>
+                            <button class="mini-btn" id="rev-draw-undo">undo</button>
+                        </div>
+                        <div class="btn-row" id="rev-brush" aria-label="brush thickness"></div>
+                    </div>
+                    <div class="i2i-side">
+                        <label class="field"><span class="field-k">strength <span class="field-v" id="strength-out">0.60</span></span>
+                            <input type="range" id="strength" min="0.25" max="0.95" step="0.05" value="0.6">
+                        </label>
+                        <div class="arith" id="i2i-math">draw something to start from it</div>
+                        <p class="note">leave the box empty and sampling starts from pure noise at t=200. Sketch in it and generate instead noises <em>your</em> drawing to t = strength&times;200 and denoises down from there &mdash; less noise means fewer steps to overwrite you, so more of your shape survives. This is exactly what img2img is.</p>
                     </div>
                 </div>
                 <div class="rev-canvases">
@@ -79,7 +114,11 @@
                     <div class="cap-col"><canvas id="rev-eps" class="pix" width="112" height="112"></canvas><span>&epsilon;&#770; — noise it will remove</span></div>
                 </div>
                 <div class="film" id="film"></div>
-                <p class="note">every frame is one real DDIM step: the network looks at x<sub>t</sub>, predicts the clean image, and steps toward it. Hover the strip to scrub. Guidance pushes the prediction away from "any digit" toward <em>your</em> digit.</p>
+                <div class="grid-wrap" id="grid-wrap" hidden>
+                    <div class="grid-out" id="grid"></div>
+                    <p class="note" id="grid-note">nine runs of the same settings, seeds only one apart. Same model, same class, same guidance &mdash; the entire difference between these digits is which noise they started from.</p>
+                </div>
+                <p class="note">every frame in the strip is one real DDIM step: the network looks at x<sub>t</sub>, predicts the clean image behind it, and the sampler steps partway there. Hover any frame to scrub back to it. &epsilon;&#770; is what that belief implies is noise &mdash; late in a run it stops looking like static and starts looking like the digit's outline, because by then the model is mostly arguing about edges.</p>
             </section>
         </div>
     </div>
@@ -93,10 +132,17 @@
                     <button class="mini-btn" id="lat-clear">clear</button>
                     <button class="mini-btn" id="lat-undo">undo</button>
                 </div>
+                <div class="btn-row" id="lat-brush" aria-label="brush thickness"></div>
                 <div class="thumb-strip" id="lat-samples"></div>
                 <button class="mini-btn" id="lat-shuffle">shuffle</button>
                 <div class="arith" id="lat-z">z = ( &ndash; , &ndash; )</div>
-                <p class="note">the encoder [784&rarr;256&rarr;64&rarr;2] squeezes your drawing to a single point. Everything the decoder can ever rebuild must fit through those two numbers — that bottleneck <em>is</em> the concept of an embedding.</p>
+                <div class="recon-row">
+                    <div class="cap-col"><canvas id="lat-recon" class="pix" width="112" height="112"></canvas><span>decoder(encoder(you))</span></div>
+                    <div class="recon-info">
+                        <div class="arith" id="recon-mse">recon mse &ndash;</div>
+                    </div>
+                </div>
+                <p class="note">the encoder [784&rarr;256&rarr;64&rarr;2] squeezes your drawing to a single point, and the decoder rebuilds an image from just those two numbers. The round trip above updates as you draw; the error is the average squared difference, per pixel, between what you drew and what came back. Watch it climb when you add a detail two numbers can't hold.</p>
             </section>
 
             <section class="panel map-panel">
@@ -117,7 +163,7 @@
                 <label class="field"><span class="field-k">A &rarr; B</span>
                     <input type="range" id="lerp" min="0" max="100" value="50">
                 </label>
-                <p class="note">walking the straight line between two latent points morphs one digit into the other — the space between memorized examples is filled with in-between digits.</p>
+                <p class="note">set A and B anywhere, then walk the straight line between them. Nothing was trained on the points in the middle, yet every one of them decodes to a plausible digit &mdash; the space between the examples got filled in for free.</p>
             </section>
         </div>
     </div>
