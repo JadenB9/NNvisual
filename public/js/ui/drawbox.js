@@ -86,6 +86,11 @@ export class DrawBox {
         if (this.onchange) this.onchange(this.value);
     }
 
+    // brush sigma in cell units — thin ~0.75, medium ~1.15, thick ~1.7
+    setBrush(sigma) {
+        this.brush = sigma;
+    }
+
     clear() {
         this.undoStack.push(this.value.slice());
         this.value.fill(0);
