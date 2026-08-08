@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Language models — NNvisual</title>
+<meta name="description" content="A real character-level transformer trained on Shakespeare generates text in your browser — watch tokens embed, attention heads look back, and the next-character distribution form.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230e1011'/><circle cx='4' cy='8' r='1.6' fill='%23eeebe3'/><circle cx='12' cy='4.5' r='1.6' fill='%236a9955'/><circle cx='12' cy='11.5' r='1.6' fill='%23c25b4e'/><path d='M5.5 8 10.5 5M5.5 8 10.5 11' stroke='%235f5c55' stroke-width='1'/></svg>">
+<link rel="stylesheet" href="./css/base.css">
+<link rel="stylesheet" href="./css/demo.css">
+<link rel="stylesheet" href="./css/transformer.css">
+</head>
+<body>
+
+<header class="topbar">
+    <a class="brand" href="./index.html">
+        <span class="logo" aria-hidden="true"></span>
+        <span class="brand-name">NNvisual</span>
+    </a>
+    <span class="page-chip">language models &middot; transformer</span>
+    <div id="net-status">loading&hellip;</div>
+</header>
+
+<div class="load-overlay" id="loader">
+    <span id="load-text">fetching transformer&hellip;</span>
+    <div class="load-bar"><div class="load-fill" id="load-fill"></div></div>
+</div>
+
+<main class="demo">
+    <div class="row">
+        <section class="panel gen-controls">
+            <h2>generate</h2>
+            <label class="field"><span class="field-k">prompt</span>
+                <input type="text" id="prompt" value="ROMEO:" maxlength="64" spellcheck="false">
+            </label>
+            <label class="field"><span class="field-k">temperature <span class="field-v" id="temp-out">0.8</span></span>
+                <input type="range" id="temp" min="0.2" max="1.6" step="0.1" value="0.8">
+            </label>
+            <label class="field"><span class="field-k">top-k</span>
+                <select id="topk">
+                    <option value="0">off (full vocab)</option>
+                    <option value="5">5</option>
+                    <option value="10" selected>10</option>
+                    <option value="20">20</option>
+                </select>
+            </label>
+            <div class="btn-row">
+                <button class="run-btn" id="autoplay">generate</button>
+                <button class="mini-btn" id="step">step 1 token</button>
+                <button class="mini-btn" id="reset">reset</button>
+            </div>
+            <label class="field"><span class="field-k">speed <span class="field-v" id="speed-out">4/s</span></span>
+                <input type="range" id="speed" min="1" max="12" value="4">
+            </label>
+            <p class="note">a 115k-parameter, 2-layer, 4-head character transformer trained on Shakespeare with hand-written numpy — running its real forward pass here for every character.</p>
+        </section>
+
+        <section class="panel gen-text-panel">
+            <h2>the text so far <span class="note-inline">(the model sees the last 64 characters)</span></h2>
+            <div class="gen-text" id="gen-text"></div>
+        </section>
+
+        <section class="panel next-panel">
+            <h2>next character</h2>
+            <div id="next-bars"></div>
+            <p class="note" id="sample-note">press <em>step</em> to watch one prediction happen.</p>
+        </section>
+    </div>
+
+    <div class="row">
+        <section class="panel attn-panel">
+            <h2>attention — where the model looks back
+                <span class="note-inline">arcs: what the <em>last</em> position attends to, in the selected head</span>
+            </h2>
+            <canvas id="arcs" height="70"></canvas>
+            <div class="chips" id="chips"></div>
+            <div class="attn-grid">
+                <div>
+                    <div class="btn-row" id="head-pick"></div>
+                    <canvas id="attn-matrix" class="pix" width="256" height="256"></canvas>
+                    <p class="note">the causal triangle: row = position asking, column = position answering. Click a cell for its arithmetic.</p>
+                </div>
+                <div class="pair-detail">
+                    <h3>score arithmetic</h3>
+                    <div class="arith" id="pair-arith">click the matrix&hellip;</div>
+                    <h3>selected token internals</h3>
+                    <div class="tile-row">
+                        <div class="tile"><span>token emb</span><canvas id="tile-tok" class="pix" width="8" height="8"></canvas></div>
+                        <div class="tile"><span>+ position</span><canvas id="tile-pos" class="pix" width="8" height="8"></canvas></div>
+                        <div class="tile"><span>mlp acts</span><canvas id="tile-mlp" class="pix" width="16" height="16"></canvas></div>
+                    </div>
+                    <p class="note">64 numbers per token drawn as 8&times;8 tiles — click any chip above to inspect it.</p>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div class="row">
+        <section class="panel emb-panel">
+            <h2>the embedding space — 65 characters, projected to 2-D</h2>
+            <canvas id="emb-map" width="640" height="420"></canvas>
+            <p class="note">PCA of the learned 64-d character embeddings, computed here at load. Characters the model treats similarly sit together — vowels, digits, punctuation. Hover a character for its neighbors.</p>
+        </section>
+
+        <section class="panel cos-panel">
+            <h2>cosine similarity — the geometry attention runs on</h2>
+            <div class="cos-picks">
+                <label class="field"><span class="field-k">character A</span><select id="cos-a"></select></label>
+                <label class="field"><span class="field-k">character B</span><select id="cos-b"></select></label>
+            </div>
+            <canvas id="cos-view" width="360" height="260"></canvas>
+            <div class="arith" id="cos-read"></div>
+            <p class="note">the drawn angle is the true 64-dimensional angle between the two embedding vectors. Attention scores are scaled dot products &mdash; q&middot;k = |q||k|cos&theta; &mdash; so "similar direction" is literally what a head pays attention to.</p>
+        </section>
+    </div>
+</main>
+
+<footer class="foot">
+    <span>real weights &middot; real attention &middot; <a href="./index.html">all networks</a> &middot; <a href="https://github.com/JadenB9/NNvisual" target="_blank" rel="noopener noreferrer">source</a></span>
+</footer>
+
+<script type="module" src="./js/pages/transformer.js"></script>
+</body>
+</html>
