@@ -2,7 +2,19 @@
 
 .gen-controls { width: 270px; flex-shrink: 0; }
 
+/* a control switched off by greedy mode still reads, but reads as inactive */
+.field.is-off .field-k { color: var(--faint); }
+.field select:disabled, .field input:disabled { opacity: 0.4; cursor: default; }
+
+.prompt-note { color: var(--muted); }
+.prompt-note:empty { display: none; }
+
 .gen-text-panel { flex: 1; min-width: 0; }
+
+.gen-text-panel h2 { display: flex; align-items: baseline; flex-wrap: wrap; }
+
+/* beats .note-inline's own margin/color, which is defined further down */
+.gen-text-panel h2 .ctx-use { margin-left: auto; color: var(--muted); }
 
 .gen-text {
     font-family: var(--mono);
@@ -66,7 +78,9 @@
 
 .attn-grid {
     display: grid;
-    grid-template-columns: auto 1fr;
+    /* pinned to the matrix so its caption can't widen the column and squeeze
+       the detail pane off the panel */
+    grid-template-columns: 256px 1fr;
     gap: 20px;
     align-items: start;
 }
@@ -80,7 +94,8 @@
     background: var(--bg);
 }
 
-#head-pick { margin-bottom: 8px; }
+/* capped so the head buttons wrap over the matrix instead of widening its column */
+#head-pick { margin-bottom: 8px; max-width: 256px; }
 
 .pair-detail { min-width: 0; }
 

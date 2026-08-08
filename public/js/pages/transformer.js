@@ -3,18 +3,21 @@ import { Transformer } from '../engine/transformer.js';
 import { mulberry32 } from '../engine/rng.js';
 import { drawHeat } from '../ui/heat.js';
 import { Bars } from '../ui/bars.js';
+import { nucleus, argmax, rankOf, keptCount } from './sampling.js';
 
 const $ = (id) => document.getElementById(id);
 const show = (ch) => (ch === '\n' ? '⏎' : ch === ' ' ? '␣' : ch);
+
+const MEAN = -1;               // head picker value for "average of this layer's heads"
+const FALLBACK_PROMPT = 'ROMEO:';
 
 const state = {
     model: null,
     tokens: [],        // full generated sequence (token ids)
     promptLen: 0,
     fwd: null,         // capture for the current context window
-    ctxStart: 0,       // index of the first token in the window
     layer: 1,
-    head: 0,
+    head: 0,           // head index, or MEAN
     selected: 0,       // selected position within the window
     pair: null,        // [row, col] in the matrix
     playing: false,
@@ -22,11 +25,33 @@ const state = {
     lastStep: 0,
     temperature: 0.8,
     topK: 10,
+    topP: 0,           // 0 = off
+    greedy: false,
+    lastProbs: null,   // the distribution the bars are showing
+    lastLogits: null,  // raw logits behind it, before temperature
+    sampled: null,     // token drawn from lastProbs, or null if nothing was drawn from it
+    attnCache: null,
     rand: mulberry32(Date.now() & 0xffffff),
     pca: null,
 };
 
 let nextBars = null;
+let highlightEmb = () => {};   // assigned by buildEmbMap
+
+// The vocabulary contains "&" and "'", so page text is built from nodes
+// rather than innerHTML.
+function bold(text) {
+    const b = document.createElement('b');
+    b.textContent = text;
+    return b;
+}
+
+function setLine(el, parts) {
+    el.textContent = '';
+    for (const part of parts) {
+        el.append(typeof part === 'string' ? document.createTextNode(part) : part);
+    }
+}
 
 // ---------- boot ----------
 (async function boot() {
@@ -59,44 +84,86 @@ let nextBars = null;
 
 // ---------- generation ----------
 function resetText() {
-    const prompt = $('prompt').value || 'ROMEO:';
-    state.tokens = state.model.encode(prompt);
-    if (state.tokens.length === 0) state.tokens = state.model.encode('ROMEO:');
-    state.promptLen = state.tokens.length;
+    const m = state.model;
+    if (!m) return;
+    const typed = [...$('prompt').value];
+    let tokens = m.encode($('prompt').value);
+    const note = $('prompt-note');
+    note.textContent = '';
+    if (tokens.length === 0) {
+        tokens = m.encode(FALLBACK_PROMPT);
+        note.textContent = typed.length === 0
+            ? `empty prompt — starting from ${FALLBACK_PROMPT}`
+            : `none of those characters are in the model's ${m.vocab}-character alphabet — starting from ${FALLBACK_PROMPT}`;
+    } else if (tokens.length < typed.length) {
+        const dropped = typed.length - tokens.length;
+        note.textContent = dropped === 1
+            ? `1 unknown character was dropped — the model only knows ${m.vocab} of them.`
+            : `${dropped} unknown characters were dropped — the model only knows ${m.vocab} of them.`;
+    }
+    state.tokens = tokens;
+    state.promptLen = tokens.length;
     state.playing = false;
     $('autoplay').textContent = 'generate';
     refresh(false);
 }
 
-function stepToken() {
+// One real forward pass, shaped by the current controls. Greedy ignores
+// temperature/top-k/top-p — none of them can move which score is largest — so
+// the bars then show the model's own distribution.
+function distribution() {
     const m = state.model;
     const ctx = state.tokens.slice(-m.block);
-    const { probs, fwd } = m.nextDistribution(ctx, state.temperature, state.topK);
-    const tok = m.sample(probs, state.rand);
+    const { probs, logits, fwd } = m.nextDistribution(
+        ctx,
+        state.greedy ? 1 : state.temperature,
+        state.greedy ? 0 : state.topK
+    );
+    return { probs: state.greedy ? probs : nucleus(probs, state.topP), logits, fwd };
+}
+
+function stepToken() {
+    if (!state.model || !state.tokens.length) return;
+    const { probs, logits, fwd } = distribution();
+    const tok = state.greedy ? argmax(probs) : state.model.sample(probs, state.rand);
     state.tokens.push(tok);
     state.fwd = fwd;
-    state.ctxStart = state.tokens.length - 1 - ctx.length + 0; // window start before append
     state.lastProbs = probs;
+    state.lastLogits = logits;
+    state.sampled = tok;
     refresh(true);
 }
 
 function refresh(fromStep) {
-    const m = state.model;
+    if (!state.model || !state.tokens.length) return;
     if (!fromStep) {
-        const ctx = state.tokens.slice(-m.block);
-        const { probs, fwd } = m.nextDistribution(ctx, state.temperature, state.topK);
+        const { probs, logits, fwd } = distribution();
         state.fwd = fwd;
         state.lastProbs = probs;
-        state.ctxStart = state.tokens.length - ctx.length;
+        state.lastLogits = logits;
+        state.sampled = null;   // these bars produced nothing yet
     }
-    state.selected = state.fwd.T - 1;
     state.pair = null;
+    setSelected(state.fwd.T - 1);
     renderText();
+    renderContextUse();
     renderChips();
     renderNextBars();
     renderAttn();
     renderTiles();
     renderPair();
+}
+
+// the selected position drives the arcs, the tiles, and the ring on the map
+function setSelected(i) {
+    state.selected = i;
+    highlightEmb(state.fwd.tokens[i], i);
+}
+
+function renderContextUse() {
+    const m = state.model;
+    const used = Math.min(state.tokens.length, m.block);
+    $('ctx-use').textContent = `${used}/${m.block} chars in context`;
 }
 
 function renderText() {
@@ -129,7 +196,7 @@ function renderChips() {
         b.textContent = show(state.model.chars[t]);
         b.title = `position ${i} · token ${t}`;
         b.addEventListener('click', () => {
-            state.selected = i;
+            setSelected(i);
             renderChips();
             renderAttn();
             renderTiles();
@@ -140,42 +207,92 @@ function renderChips() {
 }
 
 function renderNextBars() {
+    const m = state.model;
     const probs = state.lastProbs;
     const order = [...probs.keys()].sort((a, b) => probs[b] - probs[a]).slice(0, 10);
-    nextBars.setLabels(order.map((i) => show(state.model.chars[i])));
+    nextBars.setLabels(order.map((i) => show(m.chars[i])));
     nextBars.update(order.map((i) => probs[i]), 0);
-    const top = order[0];
-    $('sample-note').innerHTML = state.tokens.length > state.promptLen
-        ? `sampled <b>${show(state.model.decode([state.tokens[state.tokens.length - 1]]))}</b> at temperature ${state.temperature}`
-        : `most likely next: <b>${show(state.model.chars[top])}</b> (${(probs[top] * 100).toFixed(1)}%)`;
+
+    // every number below is read out of the arrays the bars were drawn from
+    const note = $('sample-note');
+    const kept = keptCount(probs);
+    if (state.sampled === null) {
+        const top = order[0];
+        setLine(note, [
+            state.greedy ? 'greedy — the next character will be ' : 'most likely next: ',
+            bold(show(m.chars[top])),
+            ` (${(probs[top] * 100).toFixed(1)}%, ${kept} of ${m.vocab} characters still in play)`,
+        ]);
+        return;
+    }
+    const tok = state.sampled;
+    const knobs = state.greedy
+        ? ' — the largest score, no dice roll'
+        : ` — temperature ${state.temperature.toFixed(1)}`
+            + (state.topK ? `, top-k ${state.topK}` : '')
+            + (state.topP ? `, top-p ${state.topP}` : '');
+    setLine(note, [
+        state.greedy ? 'took ' : 'sampled ',
+        bold(show(m.chars[tok])),
+        `: rank ${rankOf(probs, tok)} of the ${kept} kept, `,
+        bold(`${(probs[tok] * 100).toFixed(1)}%`),
+        ` of the final distribution, raw logit ${state.lastLogits[tok].toFixed(2)}`,
+        knobs,
+    ]);
 }
 
 // ---------- attention rendering ----------
 function buildHeadPicker() {
     const box = $('head-pick');
     box.textContent = '';
+    const add = (label, layer, head) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'seg-btn' + (layer === state.layer && head === state.head ? ' is-active' : '');
+        b.textContent = label;
+        b.addEventListener('click', () => {
+            state.layer = layer;
+            state.head = head;
+            box.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('is-active', x === b));
+            renderAttn();
+            renderPair();
+        });
+        box.append(b);
+    };
     for (let l = 0; l < state.model.nLayer; l++) {
-        for (let h = 0; h < state.model.nHead; h++) {
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.className = 'seg-btn' + (l === state.layer && h === state.head ? ' is-active' : '');
-            b.textContent = `L${l + 1}·H${h + 1}`;
-            b.addEventListener('click', () => {
-                state.layer = l;
-                state.head = h;
-                box.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('is-active', x === b));
-                renderAttn();
-                renderPair();
-            });
-            box.append(b);
-        }
+        for (let h = 0; h < state.model.nHead; h++) add(`L${l + 1}·H${h + 1}`, l, h);
+        add(`L${l + 1}·mean`, l, MEAN);
     }
+}
+
+// The T×T map the matrix and the arcs both draw: one head's captured
+// probabilities, or the true cell-by-cell average over the layer's heads.
+// Rows of the average still sum to 1, since every row averaged does.
+function attnProbs() {
+    const cache = state.attnCache;
+    if (cache && cache.fwd === state.fwd && cache.layer === state.layer && cache.head === state.head) {
+        return cache.probs;
+    }
+    const heads = state.fwd.layers[state.layer].heads;
+    let probs;
+    if (state.head === MEAN) {
+        const n = state.fwd.T * state.fwd.T;
+        probs = new Float32Array(n);
+        for (const head of heads) {
+            for (let i = 0; i < n; i++) probs[i] += head.probs[i];
+        }
+        for (let i = 0; i < n; i++) probs[i] /= heads.length;
+    } else {
+        probs = heads[state.head].probs;
+    }
+    state.attnCache = { fwd: state.fwd, layer: state.layer, head: state.head, probs };
+    return probs;
 }
 
 function renderAttn() {
     if (!state.fwd) return;
     const T = state.fwd.T;
-    const probs = state.fwd.layers[state.layer].heads[state.head].probs;
+    const probs = attnProbs();
     const canvas = $('attn-matrix');
     const off = document.createElement('canvas');
     off.width = T;
@@ -221,7 +338,7 @@ function drawArcs() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const T = state.fwd.T;
-    const probs = state.fwd.layers[state.layer].heads[state.head].probs;
+    const probs = attnProbs();
     const src = state.selected;
     const centers = chips.map((c) => c.offsetLeft + c.offsetWidth / 2);
     const y = canvas.height - 2;
@@ -253,13 +370,14 @@ function drawArcs() {
 }
 
 $('attn-matrix').addEventListener('pointerdown', (e) => {
+    if (!state.fwd) return;
     const T = state.fwd.T;
     const r = e.currentTarget.getBoundingClientRect();
     const col = Math.floor(((e.clientX - r.left) / r.width) * T);
     const row = Math.floor(((e.clientY - r.top) / r.height) * T);
     if (col > row) return; // causal mask — the future is not an option
     state.pair = [row, col];
-    state.selected = row;
+    setSelected(row);
     renderChips();
     renderAttn();
     renderTiles();
@@ -274,17 +392,34 @@ function renderPair() {
     }
     const [row, col] = state.pair;
     const T = state.fwd.T;
-    const layer = state.fwd.layers[state.layer];
-    const raw = layer.heads[state.head].scores[row * T + col];
-    const p = layer.heads[state.head].probs[row * T + col];
+    const cell = row * T + col;
+    const heads = state.fwd.layers[state.layer].heads;
     const chars = state.model.chars;
     const rowCh = show(chars[state.fwd.tokens[row]]);
     const colCh = show(chars[state.fwd.tokens[col]]);
-    box.innerHTML = [
-        `“${rowCh}” (pos ${row}) asks “${colCh}” (pos ${col})`,
-        `q·k / √16      = <b>${raw.toFixed(3)}</b>`,
-        `softmax share  = <b>${(p * 100).toFixed(1)}%</b> of pos ${row}'s attention`,
-    ].join('\n');
+    const asks = `“${rowCh}” (pos ${row}) asks “${colCh}” (pos ${col})\n`;
+
+    if (state.head === MEAN) {
+        // averaged softmaxes have no single q·k, so show the heads instead
+        setLine(box, [
+            asks,
+            `mean of ${heads.length} heads = `,
+            bold(`${(attnProbs()[cell] * 100).toFixed(1)}%`),
+            ` of pos ${row}'s attention\n`,
+            heads.map((h, i) => `H${i + 1} ${(h.probs[cell] * 100).toFixed(1)}%`).join('   '),
+            '\npick a single head for its q·k arithmetic',
+        ]);
+        return;
+    }
+    const head = heads[state.head];
+    setLine(box, [
+        asks,
+        `q·k / √${state.model.d / state.model.nHead}      = `,
+        bold(head.scores[cell].toFixed(3)),
+        '\nsoftmax share  = ',
+        bold(`${(head.probs[cell] * 100).toFixed(1)}%`),
+        ` of pos ${row}'s attention`,
+    ]);
 }
 
 function renderTiles() {
@@ -357,24 +492,41 @@ function buildEmbMap() {
     const canvas = $('emb-map');
     const m = state.model;
     let hover = -1;
+    let marked = -1;      // token ringed by the chip / matrix selection
+    let markedPos = -1;
+
+    const project = () => {
+        const w = canvas.width;
+        const h = canvas.height;
+        let maxAbs = 1e-9;
+        for (const [x, y] of state.pca) maxAbs = Math.max(maxAbs, Math.abs(x), Math.abs(y));
+        return {
+            sx: (x) => w / 2 + (x / maxAbs) * (w / 2 - 34),
+            sy: (y) => h / 2 - (y / maxAbs) * (h / 2 - 30),
+        };
+    };
 
     const draw = () => {
         const ctx = canvas.getContext('2d');
         const w = canvas.width;
         const h = canvas.height;
         ctx.clearRect(0, 0, w, h);
-        let maxAbs = 1e-9;
-        for (const [x, y] of state.pca) maxAbs = Math.max(maxAbs, Math.abs(x), Math.abs(y));
-        const sx = (x) => w / 2 + (x / maxAbs) * (w / 2 - 34);
-        const sy = (y) => h / 2 - (y / maxAbs) * (h / 2 - 30);
+        const { sx, sy } = project();
+
+        if (marked >= 0) {
+            ctx.strokeStyle = '#86c3d6';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(sx(state.pca[marked][0]), sy(state.pca[marked][1]), 13, 0, Math.PI * 2);
+            ctx.stroke();
+        }
 
         ctx.font = '17px "Plex Mono", ui-monospace, monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         state.pca.forEach(([x, y], v) => {
             const ch = m.chars[v];
-            const isHover = v === hover;
-            ctx.fillStyle = isHover ? '#eeebe3'
+            ctx.fillStyle = v === hover || v === marked ? '#eeebe3'
                 : /[a-z]/.test(ch) ? '#86c3d6'
                 : /[A-Z]/.test(ch) ? '#6a9955'
                 : /[0-9]/.test(ch) ? '#c2a24e'
@@ -382,6 +534,13 @@ function buildEmbMap() {
             ctx.fillText(show(ch), sx(x), sy(y));
         });
 
+        if (marked >= 0) {
+            ctx.fillStyle = '#86c3d6';
+            ctx.textAlign = 'left';
+            ctx.font = '13px "Plex Mono", ui-monospace, monospace';
+            ctx.fillText(`ringed: “${show(m.chars[marked])}”, the token selected at position ${markedPos}`, 12, 16);
+            ctx.font = '17px "Plex Mono", ui-monospace, monospace';
+        }
         if (hover >= 0) {
             // nearest neighbors by true 64-d cosine
             const sims = [];
@@ -396,17 +555,23 @@ function buildEmbMap() {
         }
     };
 
+    highlightEmb = (token, pos) => {
+        if (token === marked && pos === markedPos) return;
+        marked = token;
+        markedPos = pos;
+        draw();
+    };
+
     canvas.addEventListener('pointermove', (e) => {
         const r = canvas.getBoundingClientRect();
         const px = ((e.clientX - r.left) / r.width) * canvas.width;
         const py = ((e.clientY - r.top) / r.height) * canvas.height;
+        const { sx, sy } = project();
         let best = -1;
         let bestD = 400;
-        let maxAbs = 1e-9;
-        for (const [x, y] of state.pca) maxAbs = Math.max(maxAbs, Math.abs(x), Math.abs(y));
         state.pca.forEach(([x, y], v) => {
-            const dx = canvas.width / 2 + (x / maxAbs) * (canvas.width / 2 - 34) - px;
-            const dy = canvas.height / 2 - (y / maxAbs) * (canvas.height / 2 - 30) - py;
+            const dx = sx(x) - px;
+            const dy = sy(y) - py;
             const dd = dx * dx + dy * dy;
             if (dd < bestD) { bestD = dd; best = v; }
         });
@@ -530,11 +695,19 @@ $('step').addEventListener('click', () => {
     stepToken();
 });
 $('autoplay').addEventListener('click', () => {
+    if (!state.model) return;
     state.playing = !state.playing;
     $('autoplay').textContent = state.playing ? 'pause' : 'generate';
 });
 $('reset').addEventListener('click', resetText);
-$('prompt').addEventListener('change', resetText);
+$('preset').addEventListener('change', (e) => {
+    if (e.target.value) $('prompt').value = e.target.value;
+    resetText();
+});
+$('prompt').addEventListener('change', () => {
+    syncPreset();
+    resetText();
+});
 $('temp').addEventListener('input', (e) => {
     state.temperature = parseFloat(e.target.value);
     $('temp-out').textContent = state.temperature.toFixed(1);
@@ -544,6 +717,34 @@ $('topk').addEventListener('change', (e) => {
     state.topK = parseInt(e.target.value, 10);
     if (!state.playing) refresh(false);
 });
+$('topp').addEventListener('change', (e) => {
+    state.topP = parseFloat(e.target.value);
+    if (!state.playing) refresh(false);
+});
+$('greedy').addEventListener('click', () => setGreedy(!state.greedy));
+
+// a typed prompt that matches no preset drops the picker back to "custom…"
+function syncPreset() {
+    const sel = $('preset');
+    const typed = $('prompt').value;
+    const known = [...sel.options].some((o) => o.value !== '' && o.value === typed);
+    sel.value = known ? typed : '';
+}
+
+// Greedy always takes the largest score, which temperature, top-k and top-p
+// cannot change — so they switch off while it is on.
+function setGreedy(on) {
+    state.greedy = on;
+    const btn = $('greedy');
+    btn.textContent = `greedy: ${on ? 'on' : 'off'}`;
+    btn.classList.toggle('is-active', on);
+    btn.setAttribute('aria-pressed', String(on));
+    for (const name of ['temp', 'topk', 'topp']) {
+        $(name).disabled = on;
+        $(`${name}-field`).classList.toggle('is-off', on);
+    }
+    if (!state.playing) refresh(false);
+}
 $('speed').addEventListener('input', (e) => {
     state.speed = parseInt(e.target.value, 10);
     $('speed-out').textContent = `${state.speed}/s`;
