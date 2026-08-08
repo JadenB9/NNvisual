@@ -88,6 +88,85 @@
 
 .film canvas.is-cur { border-color: var(--text-bright); }
 
+/* a disabled slider still reads, it just stops inviting a drag */
+.field.is-off { opacity: 0.42; }
+.field.is-off input { cursor: not-allowed; }
+
+/* img2img seed box */
+
+.img2img {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+
+.i2i-draw {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.i2i-cap {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--faint);
+}
+
+.i2i-side { flex: 1; min-width: 210px; }
+.i2i-side .field { margin-top: 0; }
+
+#rev-draw {
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    cursor: crosshair;
+    touch-action: none;
+}
+
+/* 3x3 grid */
+
+.grid-wrap { margin-top: 12px; }
+
+.grid-out {
+    display: grid;
+    grid-template-columns: repeat(3, 64px);
+    gap: 5px;
+    margin-bottom: 8px;
+}
+
+.grid-out canvas {
+    width: 64px;
+    height: 64px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg);
+}
+
+.grid-out canvas.is-pending { opacity: 0.25; }
+
+/* latent reconstruction */
+
+.recon-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+.recon-info { flex: 1; min-width: 120px; }
+.recon-info .arith { margin-top: 0; }
+
+#lat-recon {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
 /* latent */
 
 .enc-panel { width: 300px; flex-shrink: 0; }
