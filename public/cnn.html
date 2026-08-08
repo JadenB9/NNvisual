@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Image detection — NNvisual</title>
+<meta name="description" content="Draw a digit and watch a real convolutional network process it stage by stage — kernels, feature maps, pooling, and a slow-motion convolution scan.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230e1011'/><circle cx='4' cy='8' r='1.6' fill='%23eeebe3'/><circle cx='12' cy='4.5' r='1.6' fill='%236a9955'/><circle cx='12' cy='11.5' r='1.6' fill='%23c25b4e'/><path d='M5.5 8 10.5 5M5.5 8 10.5 11' stroke='%235f5c55' stroke-width='1'/></svg>">
+<link rel="stylesheet" href="./css/base.css">
+<link rel="stylesheet" href="./css/demo.css">
+<link rel="stylesheet" href="./css/cnn.css">
+</head>
+<body>
+
+<header class="topbar">
+    <a class="brand" href="./index.html">
+        <span class="logo" aria-hidden="true"></span>
+        <span class="brand-name">NNvisual</span>
+    </a>
+    <span class="page-chip">image detection &middot; convolutional network</span>
+    <div id="net-status">loading&hellip;</div>
+</header>
+
+<div class="load-overlay" id="loader">
+    <span id="load-text">fetching weights&hellip;</span>
+    <div class="load-bar"><div class="load-fill" id="load-fill"></div></div>
+</div>
+
+<main class="demo">
+    <div class="row">
+        <section class="panel input-panel">
+            <h2>input — draw a digit</h2>
+            <canvas id="draw" class="pix" width="224" height="224"></canvas>
+            <div class="btn-row">
+                <button class="mini-btn" id="clear">clear</button>
+                <button class="mini-btn" id="undo">undo</button>
+            </div>
+            <h3>or load a real test digit</h3>
+            <div class="thumb-strip" id="samples"></div>
+            <button class="mini-btn" id="shuffle-samples">shuffle</button>
+            <h3>what the network sees</h3>
+            <div class="preview-row">
+                <canvas id="preview" class="pix" width="84" height="84"></canvas>
+                <p class="note">hover any feature map on the right and its <em>receptive field</em> — the input pixels it can see — lights up here.</p>
+            </div>
+        </section>
+
+        <section class="panel stages-panel">
+            <h2>the network, stage by stage <span class="shape-note">28&times;28 &rarr; conv 8&times;3&times;3 &rarr; pool &rarr; conv 16&times;3&times;3 &rarr; pool &rarr; dense</span></h2>
+
+            <div class="stage-block">
+                <div class="stage-head"><span class="stage-name">conv 1 — 8 learned 3&times;3 kernels</span><span class="note-inline">each kernel slides over the input; green weights add, red subtract</span></div>
+                <div class="k-row" id="kernels1"></div>
+                <div class="stage-head sub"><span class="stage-name">&rarr; 8 feature maps (after relu)</span></div>
+                <div class="m-row" id="maps1"></div>
+            </div>
+
+            <div class="stage-block">
+                <div class="stage-head"><span class="stage-name">max pool — keep the strongest 2&times;2</span></div>
+                <div class="m-row" id="pool1"></div>
+            </div>
+
+            <div class="stage-block">
+                <div class="stage-head"><span class="stage-name">conv 2 — 16 kernels over all 8 maps &rarr; relu</span></div>
+                <div class="m-row" id="maps2"></div>
+            </div>
+
+            <div class="stage-block">
+                <div class="stage-head"><span class="stage-name">max pool &rarr; flatten to 400 values</span></div>
+                <div class="m-row" id="pool2"></div>
+                <canvas id="flat" class="pix flat-strip" width="400" height="1"></canvas>
+            </div>
+        </section>
+
+        <section class="panel output-panel">
+            <h2>output</h2>
+            <div class="pred" id="pred">&ndash;</div>
+            <div id="bars"></div>
+            <p class="note">the dense layer reads all 400 flattened values and votes.</p>
+        </section>
+    </div>
+
+    <div class="row">
+        <section class="panel scan-panel">
+            <h2>scan mode — convolution in slow motion</h2>
+            <div class="scan-grid">
+                <div>
+                    <canvas id="scan-input" class="pix" width="168" height="168"></canvas>
+                    <p class="note">the 3&times;3 window walks the image&hellip;</p>
+                </div>
+                <div class="scan-mid">
+                    <div class="k-pick-row">
+                        <span class="k-pick-label">kernel</span>
+                        <div class="btn-row" id="scan-kernel-pick"></div>
+                    </div>
+                    <div class="arith" id="arith"></div>
+                </div>
+                <div>
+                    <canvas id="scan-map" class="pix" width="156" height="156"></canvas>
+                    <p class="note">&hellip;painting one feature-map pixel per step</p>
+                </div>
+            </div>
+            <div class="btn-row">
+                <button class="run-btn" id="scan-play">scan</button>
+                <button class="mini-btn" id="scan-step">step</button>
+                <button class="mini-btn" id="scan-reset">reset</button>
+                <label class="field scan-speed"><span class="field-k">speed</span>
+                    <input type="range" id="scan-speed" min="1" max="24" value="6">
+                </label>
+            </div>
+        </section>
+
+        <section class="panel play-panel">
+            <h2>kernel playground — try your own 3&times;3</h2>
+            <div class="play-grid">
+                <div>
+                    <div class="kernel-edit" id="kernel-edit"></div>
+                    <div class="btn-row" id="kernel-presets"></div>
+                </div>
+                <div>
+                    <canvas id="play-out" class="pix" width="156" height="156"></canvas>
+                    <p class="note">your kernel convolved over your drawing — green positive response, red negative. Edge kernels light up where brightness changes; that is the whole trick conv nets build on.</p>
+                </div>
+            </div>
+        </section>
+    </div>
+</main>
+
+<footer class="foot">
+    <span>every map is the real convolution of your drawing &middot; <a href="./index.html">all networks</a> &middot; <a href="https://github.com/JadenB9/NNvisual" target="_blank" rel="noopener noreferrer">source</a></span>
+</footer>
+
+<script type="module" src="./js/pages/cnn.js"></script>
+</body>
+</html>

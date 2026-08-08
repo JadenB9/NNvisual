@@ -1,0 +1,163 @@
+/* CNN page — stage lanes of kernels and feature maps. */
+
+.input-panel { width: 268px; flex-shrink: 0; }
+
+#draw {
+    width: 224px;
+    height: 224px;
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    cursor: crosshair;
+}
+
+.preview-row { display: flex; gap: 10px; align-items: flex-start; }
+
+#preview { border: 1px solid var(--border); border-radius: 6px; flex-shrink: 0; }
+
+.stages-panel { flex: 1; min-width: 0; }
+
+.shape-note {
+    text-transform: none;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin-left: 10px;
+    font-size: 11px;
+}
+
+.stage-block {
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+    margin-top: 12px;
+}
+
+.stage-block:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
+
+.stage-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 7px;
+}
+
+.stage-head.sub { margin-top: 8px; }
+
+.stage-name {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+}
+
+.note-inline { font-size: 11px; color: var(--faint); }
+
+.k-row, .m-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.k-row canvas, .m-row canvas {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+
+.m-row canvas { cursor: crosshair; }
+
+.flat-strip {
+    width: 100%;
+    height: 10px;
+    margin-top: 8px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+}
+
+.output-panel { width: 250px; flex-shrink: 0; }
+
+.pred {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 84px;
+    line-height: 1;
+    text-align: center;
+    color: var(--text-bright);
+    margin: 6px 0 14px;
+}
+
+/* ---------- scan mode ---------- */
+
+.scan-panel { flex: 1.4; }
+.play-panel { flex: 1; }
+
+.scan-grid {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 18px;
+    align-items: start;
+}
+
+#scan-input, #scan-map, #play-out {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+}
+
+.k-pick-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+
+.k-pick-label { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+#scan-kernel-pick canvas {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+#scan-kernel-pick canvas.is-active { border-color: var(--text-bright); }
+
+.arith {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: var(--muted);
+    white-space: pre;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    min-height: 130px;
+}
+
+.arith b { color: var(--text-bright); font-weight: 500; }
+
+.scan-speed { width: 130px; margin: 0 0 0 auto; }
+
+/* ---------- kernel playground ---------- */
+
+.play-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 18px;
+}
+
+.kernel-edit {
+    display: grid;
+    grid-template-columns: repeat(3, 56px);
+    gap: 6px;
+}
+
+.kernel-edit input {
+    width: 56px;
+    padding: 8px 4px;
+    font-family: var(--mono);
+    font-size: 12px;
+    text-align: center;
+    color: var(--text-bright);
+    background: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+}
+
+@media (max-width: 980px) {
+    .input-panel, .output-panel { width: 100%; }
+    .scan-grid, .play-grid { grid-template-columns: 1fr; }
+}
