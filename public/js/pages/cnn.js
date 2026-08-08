@@ -13,10 +13,23 @@ const state = {
     stages: null,
     scan: { kernel: 0, pos: 0, playing: false, speed: 6 },
     playKernel: [0, -1, 0, -1, 4, -1, 0, -1, 0],
+    preRelu: false,
+    normalize: false,
+    inspect: null, // { stage, idx } of the feature map open in the inspector
 };
 
 const bars = new Bars($('bars'), [...Array(10).keys()].map(String));
 const mapCanvases = { maps1: [], pool1: [], maps2: [], pool2: [] };
+
+// grid size and headline for each clickable feature-map row
+const STAGE_INFO = {
+    maps1: { name: 'conv1', grid: 26, count: 8 },
+    pool1: { name: 'pool1', grid: 13, count: 8 },
+    maps2: { name: 'conv2', grid: 11, count: 16 },
+    pool2: { name: 'pool2', grid: 5, count: 16 },
+};
+
+let panel = null;
 
 // ---------- boot ----------
 (async function boot() {
@@ -50,7 +63,7 @@ const mapCanvases = { maps1: [], pool1: [], maps2: [], pool2: [] };
     buildScanPicker();
     buildKernelEditor();
 
-    initInputPanel({
+    panel = initInputPanel({
         drawId: 'draw', clearId: 'clear', undoId: 'undo',
         samplesId: 'samples', shuffleId: 'shuffle-samples', previewId: 'preview',
         testSet: test,
@@ -59,6 +72,9 @@ const mapCanvases = { maps1: [], pool1: [], maps2: [], pool2: [] };
             runForward();
         },
     });
+    buildBrushPicker();
+
+    runForward(); // draw every stage once, even before the first stroke
 
     requestAnimationFrame(scanFrame);
 })();
@@ -87,6 +103,7 @@ function buildStageCanvases() {
     mapCanvases.maps2 = makeRow('maps2', 16, 11, 46);
     mapCanvases.pool2 = makeRow('pool2', 16, 5, 34);
     wireReceptiveHover();
+    wireMapClicks();
 }
 
 function renderKernels() {
@@ -105,24 +122,86 @@ function renderKernels() {
     }
 }
 
+const BRUSHES = [['thin', 0.75], ['medium', 1.15], ['thick', 1.7]];
+
+function buildBrushPicker() {
+    const box = $('brush-pick');
+    box.textContent = '';
+    BRUSHES.forEach(([name, sigma], i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'seg-btn' + (i === 1 ? ' is-active' : '');
+        b.textContent = name;
+        b.title = `${name} strokes`;
+        b.addEventListener('click', () => {
+            panel.box.setBrush(sigma);
+            box.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('is-active', x === b));
+        });
+        box.append(b);
+    });
+}
+
+// peak magnitude of the values currently shown for a conv row, so the whole row
+// shares one scale and maps stay comparable to each other
+function rowPeak(data) {
+    let peak = 1e-9;
+    for (const v of data) peak = Math.max(peak, Math.abs(v));
+    return peak;
+}
+
+// the tensor a given row is showing right now — pre-relu when the toggle is on
+function stageData(stage) {
+    const s = state.stages;
+    if (stage === 'maps1') return state.preRelu ? s.conv1 : s.relu1;
+    if (stage === 'maps2') return state.preRelu ? s.conv2 : s.relu2;
+    if (stage === 'pool1') return s.pool1.out;
+    return s.pool2.out;
+}
+
+// one scale per row, so maps in a row stay comparable; the pools always keep the
+// post-relu scale so the toggle never changes how they look
+function rowScale(stage) {
+    if (stage === 'pool1') return rowPeak(state.stages.relu1);
+    if (stage === 'pool2') return rowPeak(state.stages.relu2);
+    return rowPeak(stageData(stage));
+}
+
+function drawMaps() {
+    const s = state.stages;
+    if (!s) return;
+    const signed = state.preRelu;
+
+    const conv1Data = stageData('maps1');
+    const peak1 = rowScale('maps1');
+    const poolPeak1 = rowScale('pool1');
+    for (let k = 0; k < 8; k++) {
+        drawHeat(mapCanvases.maps1[k], conv1Data.subarray(k * 676, (k + 1) * 676), 26, 26, { signed, max: peak1 });
+        drawHeat(mapCanvases.pool1[k], s.pool1.out.subarray(k * 169, (k + 1) * 169), 13, 13, { max: poolPeak1 });
+    }
+
+    const conv2Data = stageData('maps2');
+    const peak2 = rowScale('maps2');
+    const poolPeak2 = rowScale('pool2');
+    for (let k = 0; k < 16; k++) {
+        drawHeat(mapCanvases.maps2[k], conv2Data.subarray(k * 121, (k + 1) * 121), 11, 11, { signed, max: peak2 });
+        drawHeat(mapCanvases.pool2[k], s.pool2.out.subarray(k * 25, (k + 1) * 25), 5, 5, { max: poolPeak2 });
+    }
+    drawHeat($('flat'), s.flat, 400, 1, { max: poolPeak2 });
+
+    $('cap1').textContent = state.preRelu
+        ? '→ 8 feature maps, before relu — negative responses in red'
+        : '→ 8 feature maps (after relu)';
+    $('cap2').textContent = state.preRelu
+        ? 'conv 2 — 16 kernels over all 8 maps, before relu — negative responses in red'
+        : 'conv 2 — 16 kernels over all 8 maps → relu';
+}
+
 function runForward() {
     if (!state.net) return;
     const s = state.net.forward(state.input);
     state.stages = s;
 
-    let peak1 = 1e-9;
-    for (const v of s.relu1) peak1 = Math.max(peak1, v);
-    for (let k = 0; k < 8; k++) {
-        drawHeat(mapCanvases.maps1[k], s.relu1.subarray(k * 676, (k + 1) * 676), 26, 26, { max: peak1 });
-        drawHeat(mapCanvases.pool1[k], s.pool1.out.subarray(k * 169, (k + 1) * 169), 13, 13, { max: peak1 });
-    }
-    let peak2 = 1e-9;
-    for (const v of s.relu2) peak2 = Math.max(peak2, v);
-    for (let k = 0; k < 16; k++) {
-        drawHeat(mapCanvases.maps2[k], s.relu2.subarray(k * 121, (k + 1) * 121), 11, 11, { max: peak2 });
-        drawHeat(mapCanvases.pool2[k], s.pool2.out.subarray(k * 25, (k + 1) * 25), 5, 5, { max: peak2 });
-    }
-    drawHeat($('flat'), s.flat, 400, 1, { max: peak2 });
+    drawMaps();
 
     let best = 0;
     for (let o = 1; o < 10; o++) if (s.probs[o] > s.probs[best]) best = o;
@@ -131,6 +210,7 @@ function runForward() {
 
     state.scan.pos = 0; // restart the scan against fresh input
     drawScan();
+    drawInspector();
     runPlayground();
 }
 
@@ -166,6 +246,75 @@ function drawPreviewWithField(rect) {
     ctx.lineWidth = 2;
     ctx.strokeRect(x * px + 1, y * px + 1, Math.min(w, 28 - x) * px - 2, Math.min(h, 28 - y) * px - 2);
 }
+
+// ---------- feature-map inspector ----------
+function wireMapClicks() {
+    for (const stage of Object.keys(STAGE_INFO)) {
+        mapCanvases[stage].forEach((c, idx) => {
+            c.title = `${STAGE_INFO[stage].name} map ${idx + 1} — click to inspect`;
+            c.addEventListener('click', () => {
+                state.inspect = { stage, idx };
+                drawInspector();
+            });
+        });
+    }
+}
+
+function drawInspector() {
+    const pick = state.inspect;
+    if (!pick || !state.stages) {
+        $('inspector').hidden = true;
+        return;
+    }
+    const info = STAGE_INFO[pick.stage];
+    const grid = info.grid;
+    const len = grid * grid;
+    const data = stageData(pick.stage).subarray(pick.idx * len, (pick.idx + 1) * len);
+    const isConv = pick.stage === 'maps1' || pick.stage === 'maps2';
+
+    const canvas = $('insp-map');
+    canvas.width = grid;
+    canvas.height = grid;
+    drawHeat(canvas, data, grid, grid, { signed: state.preRelu && isConv, max: rowScale(pick.stage) });
+
+    $('insp-cap').textContent = `${info.name} · map ${pick.idx + 1} of ${info.count} · ${grid}×${grid}`;
+
+    const wrap = $('insp-kernel-wrap');
+    wrap.hidden = pick.stage !== 'maps1';
+    if (pick.stage === 'maps1') {
+        drawHeat($('insp-kernel'), state.net.c1w.subarray(pick.idx * 9, pick.idx * 9 + 9), 3, 3, { signed: true });
+    }
+
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const v of data) {
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+    }
+    const range = `values run ${lo.toFixed(2)} to ${hi.toFixed(2)}`;
+    let why;
+    if (pick.stage === 'maps1') {
+        why = 'this map is the kernel beside it slid over all 26×26 positions of your drawing.';
+    } else if (pick.stage === 'maps2') {
+        why = 'each conv-2 map mixes all 8 pooled maps at once, so there is no single kernel to show.';
+    } else {
+        why = 'pooling kept the largest value in each 2×2 block of the map above.';
+    }
+    $('insp-note').textContent = `${why} ${range}, drawn on the same scale as its row.`;
+
+    $('inspector').hidden = false;
+}
+
+$('insp-close').addEventListener('click', () => {
+    state.inspect = null;
+    $('inspector').hidden = true;
+});
+
+$('pre-relu').addEventListener('change', (e) => {
+    state.preRelu = e.target.checked;
+    drawMaps();
+    drawInspector();
+});
 
 // ---------- scan mode ----------
 function buildScanPicker() {
@@ -208,6 +357,9 @@ function drawScan() {
     const pos = Math.min(675, Math.floor(state.scan.pos));
     const oy = Math.floor(pos / 26);
     const ox = pos % 26;
+
+    $('scan-pos').value = String(pos);
+    $('scan-pos-v').textContent = `${pos} / 675`;
 
     // input with the sliding window
     const inC = $('scan-input');
@@ -269,6 +421,12 @@ $('scan-reset').addEventListener('click', () => {
 $('scan-speed').addEventListener('input', (e) => {
     state.scan.speed = parseInt(e.target.value, 10);
 });
+$('scan-pos').addEventListener('input', (e) => {
+    state.scan.playing = false;
+    $('scan-play').textContent = 'scan';
+    state.scan.pos = parseInt(e.target.value, 10);
+    drawScan();
+});
 
 // ---------- kernel playground ----------
 const PRESETS = {
@@ -277,6 +435,7 @@ const PRESETS = {
     'edge y': [-1, -2, -1, 0, 0, 0, 1, 2, 1],
     sharpen: [0, -1, 0, -1, 5, -1, 0, -1, 0],
     blur: [0.11, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11],
+    emboss: [-2, -1, 0, -1, 1, 1, 0, 1, 2],
     identity: [0, 0, 0, 0, 1, 0, 0, 0, 0],
 };
 
@@ -312,7 +471,42 @@ function buildKernelEditor() {
     }
 }
 
+// dividing by the sum of |entries| keeps the response in the same range as the
+// input instead of letting big weights blow the scale out
+function effectiveKernel() {
+    const k = Float32Array.from(state.playKernel);
+    if (!state.normalize) return k;
+    let mass = 0;
+    for (const v of k) mass += Math.abs(v);
+    if (mass === 0) return k;
+    for (let i = 0; i < k.length; i++) k[i] /= mass;
+    return k;
+}
+
+// the picture is auto-scaled to its own peak, so normalizing never changes what
+// it looks like — only the size of the numbers. Show that number.
+function updateNormNote(peak) {
+    const strongest = `strongest response ${peak.toFixed(3)}`;
+    if (!state.normalize) {
+        $('norm-note').textContent = `raw values are used as typed — ${strongest}.`;
+        return;
+    }
+    let mass = 0;
+    for (const v of state.playKernel) mass += Math.abs(v);
+    $('norm-note').textContent = mass === 0
+        ? `all-zero kernel — nothing to divide by, so the raw values are used. ${strongest}.`
+        : `each value is divided by ${mass.toFixed(2)}, the sum of |values| — ${strongest}, which keeps the response in the same range as the input. The inputs still show what you typed, and the picture keeps its shape: only the scale moved.`;
+}
+
+$('kernel-norm').addEventListener('change', (e) => {
+    state.normalize = e.target.checked;
+    runPlayground();
+});
+
 function runPlayground() {
-    const out = conv2dForward(state.input, Float32Array.from(state.playKernel), null, 1, 28, 28, 1, 3, 3);
+    const out = conv2dForward(state.input, effectiveKernel(), null, 1, 28, 28, 1, 3, 3);
     drawHeat($('play-out'), out, 26, 26, { signed: true });
+    let peak = 0;
+    for (const v of out) peak = Math.max(peak, Math.abs(v));
+    updateNormNote(peak);
 }
