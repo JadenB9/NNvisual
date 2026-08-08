@@ -89,13 +89,13 @@
 
 /* ---------- feature-map inspector ---------- */
 
-.inspector {
+.fm-inspector {
     border-top: 1px solid var(--border);
     margin-top: 14px;
     padding-top: 10px;
 }
 
-.inspector[hidden] { display: none; }
+.fm-inspector[hidden] { display: none; }
 
 .insp-head {
     display: flex;
