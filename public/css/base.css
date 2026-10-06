@@ -165,6 +165,12 @@ body {
 
 /* ---------- shared bits ---------- */
 
+/* one visible focus ring for keyboard users on every control */
+:focus-visible {
+    outline: 2px solid var(--link-blue);
+    outline-offset: 2px;
+}
+
 @media (max-width: 640px) {
     .brand-sub { display: none; }
 }
@@ -172,6 +178,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
         animation-duration: 0.01ms !important;
+        animation-delay: 0s !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
     }

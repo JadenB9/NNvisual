@@ -4,6 +4,7 @@ import { ConvNet, conv2dForward } from '../engine/conv.js';
 import { drawHeat } from '../ui/heat.js';
 import { Bars } from '../ui/bars.js';
 import { initInputPanel } from '../ui/inputpanel.js';
+import { buildBrushPicker, makeClickable, prefersReducedMotion, showLoadError } from '../ui/controls.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -52,7 +53,7 @@ let panel = null;
         state.acc = w.meta.testAcc;
         test = testSet;
     } catch (err) {
-        text.textContent = `failed to load: ${err.message}`;
+        showLoadError(text, err);
         throw err;
     }
     $('loader').classList.add('done');
@@ -72,7 +73,7 @@ let panel = null;
             runForward();
         },
     });
-    buildBrushPicker();
+    buildBrushPicker($('brush-pick'), (sigma) => panel.box.setBrush(sigma));
 
     runForward(); // draw every stage once, even before the first stroke
 
@@ -120,25 +121,6 @@ function renderKernels() {
         drawHeat(c, state.net.c1w.subarray(k * 9, k * 9 + 9), 3, 3, { signed: true });
         box.append(c);
     }
-}
-
-const BRUSHES = [['thin', 0.75], ['medium', 1.15], ['thick', 1.7]];
-
-function buildBrushPicker() {
-    const box = $('brush-pick');
-    box.textContent = '';
-    BRUSHES.forEach(([name, sigma], i) => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'seg-btn' + (i === 1 ? ' is-active' : '');
-        b.textContent = name;
-        b.title = `${name} strokes`;
-        b.addEventListener('click', () => {
-            panel.box.setBrush(sigma);
-            box.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('is-active', x === b));
-        });
-        box.append(b);
-    });
 }
 
 // peak magnitude of the values currently shown for a conv row, so the whole row
@@ -251,10 +233,11 @@ function drawPreviewWithField(rect) {
 function wireMapClicks() {
     for (const stage of Object.keys(STAGE_INFO)) {
         mapCanvases[stage].forEach((c, idx) => {
-            c.title = `${STAGE_INFO[stage].name} map ${idx + 1} — click to inspect`;
-            c.addEventListener('click', () => {
+            makeClickable(c, `inspect ${STAGE_INFO[stage].name} map ${idx + 1}`, () => {
                 state.inspect = { stage, idx };
                 drawInspector();
+                // on a phone the inspector opens far below the map that was tapped
+                $('inspector').scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
             });
         });
     }
@@ -327,11 +310,15 @@ function buildScanPicker() {
         c.style.width = '30px';
         c.style.height = '30px';
         c.className = 'pix' + (k === 0 ? ' is-active' : '');
+        c.setAttribute('aria-pressed', String(k === 0));
         drawHeat(c, state.net.c1w.subarray(k * 9, k * 9 + 9), 3, 3, { signed: true });
-        c.addEventListener('click', () => {
+        makeClickable(c, `scan with kernel ${k + 1}`, () => {
             state.scan.kernel = k;
             state.scan.pos = 0;
-            box.querySelectorAll('canvas').forEach((x) => x.classList.toggle('is-active', x === c));
+            box.querySelectorAll('canvas').forEach((x) => {
+                x.classList.toggle('is-active', x === c);
+                x.setAttribute('aria-pressed', String(x === c));
+            });
             drawScan();
         });
         box.append(c);
@@ -446,6 +433,7 @@ function buildKernelEditor() {
         const inp = document.createElement('input');
         inp.type = 'text';
         inp.inputMode = 'decimal';
+        inp.setAttribute('aria-label', `kernel row ${Math.floor(i / 3) + 1}, column ${(i % 3) + 1}`);
         inp.value = String(state.playKernel[i]);
         inp.addEventListener('change', () => {
             const v = parseFloat(inp.value);

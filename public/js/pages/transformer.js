@@ -4,6 +4,7 @@ import { mulberry32 } from '../engine/rng.js';
 import { drawHeat } from '../ui/heat.js';
 import { Bars } from '../ui/bars.js';
 import { nucleus, argmax, rankOf, keptCount } from './sampling.js';
+import { segButton, showLoadError } from '../ui/controls.js';
 
 const $ = (id) => document.getElementById(id);
 const show = (ch) => (ch === '\n' ? '⏎' : ch === ' ' ? '␣' : ch);
@@ -66,7 +67,7 @@ function setLine(el, parts) {
         state.model = new Transformer(w);
         state.valLoss = w.meta.valLoss;
     } catch (err) {
-        text.textContent = `failed to load: ${err.message}`;
+        showLoadError(text, err);
         throw err;
     }
     $('loader').classList.add('done');
@@ -246,18 +247,12 @@ function buildHeadPicker() {
     const box = $('head-pick');
     box.textContent = '';
     const add = (label, layer, head) => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'seg-btn' + (layer === state.layer && head === state.head ? ' is-active' : '');
-        b.textContent = label;
-        b.addEventListener('click', () => {
+        segButton(box, label, layer === state.layer && head === state.head, () => {
             state.layer = layer;
             state.head = head;
-            box.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('is-active', x === b));
             renderAttn();
             renderPair();
         });
-        box.append(b);
     };
     for (let l = 0; l < state.model.nLayer; l++) {
         for (let h = 0; h < state.model.nHead; h++) add(`L${l + 1}·H${h + 1}`, l, h);
@@ -376,13 +371,31 @@ $('attn-matrix').addEventListener('pointerdown', (e) => {
     const col = Math.floor(((e.clientX - r.left) / r.width) * T);
     const row = Math.floor(((e.clientY - r.top) / r.height) * T);
     if (col > row) return; // causal mask — the future is not an option
+    pickPair(row, col);
+});
+
+// arrow keys walk the cells of the triangle, never into the masked future
+$('attn-matrix').addEventListener('keydown', (e) => {
+    if (!state.fwd) return;
+    const moves = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+    const move = moves[e.key];
+    if (!move) return;
+    e.preventDefault();
+    const T = state.fwd.T;
+    const [row0, col0] = state.pair || [state.selected, state.selected];
+    const row = Math.max(0, Math.min(T - 1, row0 + move[0]));
+    const col = Math.max(0, Math.min(row, col0 + move[1]));
+    pickPair(row, col);
+});
+
+function pickPair(row, col) {
     state.pair = [row, col];
     setSelected(row);
     renderChips();
     renderAttn();
     renderTiles();
     renderPair();
-});
+}
 
 function renderPair() {
     const box = $('pair-arith');
