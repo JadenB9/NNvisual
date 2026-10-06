@@ -42,7 +42,7 @@
     <div class="row">
         <section class="panel input-panel">
             <h2>input — draw a digit</h2>
-            <canvas id="draw" class="pix" width="224" height="224"></canvas>
+            <canvas id="draw" class="pix" width="224" height="224" role="img" aria-label="drawing pad — draw a digit with a mouse, finger or pen"></canvas>
             <div class="btn-row">
                 <button class="mini-btn" id="clear">clear</button>
                 <button class="mini-btn" id="undo">undo</button>
@@ -61,13 +61,13 @@
         <section class="panel pipeline-panel">
             <h2>the network, live <span id="shape-note" class="shape-note"></span></h2>
             <div class="pipeline-wrap">
-                <canvas id="pipeline"></canvas>
+                <canvas id="pipeline" role="img" aria-label="the network diagram: input pixels flow through the hidden layers to ten output neurons"></canvas>
                 <div class="inspector" id="inspector">
                     <canvas id="insp-heat" class="pix" width="112" height="112"></canvas>
                     <div class="insp-text" id="insp-text"></div>
                 </div>
             </div>
-            <p class="note">hover any neuron &mdash; first-layer neurons show their 784 incoming weights as an image: <em>what that neuron looks for</em>. Edge color is weight sign, brightness is |weight &times; activation| &mdash; the signal actually flowing right now.</p>
+            <p class="note">hover (or tap) any neuron &mdash; first-layer neurons show their 784 incoming weights as an image: <em>what that neuron looks for</em>. Edge color is weight sign, brightness is |weight &times; activation| &mdash; the signal actually flowing right now.</p>
         </section>
 
         <section class="panel output-panel">
@@ -121,6 +121,7 @@
                         <button class="mini-btn" id="step-epoch">1 epoch</button>
                         <button class="mini-btn" id="reset-net">reset</button>
                     </div>
+                    <p class="note" id="train-note" aria-live="polite"></p>
                 </div>
                 <div class="chart-col">
                     <h3>loss</h3>
@@ -151,7 +152,7 @@
             <h2>your own dataset &mdash; teach it your handwriting</h2>
             <div class="data-grid">
                 <div class="data-draw-col">
-                    <canvas id="data-draw" class="pix" width="168" height="168"></canvas>
+                    <canvas id="data-draw" class="pix" width="168" height="168" role="img" aria-label="drawing pad — draw a digit with a mouse, finger or pen"></canvas>
                     <div class="btn-row">
                         <button class="mini-btn" id="data-clear">clear</button>
                         <button class="mini-btn" id="data-undo">undo</button>
@@ -160,7 +161,7 @@
                 </div>
                 <div>
                     <p class="note">collect a few of each digit, then switch the training data to <em>your digits</em> and watch how many examples it takes before the network learns <em>your</em> handwriting.</p>
-                    <div class="btn-row" id="label-pick"></div>
+                    <div class="btn-row" id="label-pick" role="group" aria-label="label for your drawing"></div>
                     <div class="btn-row">
                         <button class="run-btn" id="add-example" disabled>add drawing</button>
                     </div>

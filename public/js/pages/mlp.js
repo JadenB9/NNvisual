@@ -7,6 +7,7 @@ import { drawHeat } from '../ui/heat.js';
 import { Bars } from '../ui/bars.js';
 import { LineChart } from '../ui/charts.js';
 import { Pipeline } from './mlp-pipeline.js';
+import { buildBrushPicker, segButton, makeClickable, prefersReducedMotion, showLoadError } from '../ui/controls.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -44,24 +45,6 @@ const accChart = new LineChart($('chart-acc'), [{ color: '#6a9955', label: 'test
 const draw = new DrawBox($('draw'), { onchange: onDrawChange });
 const dataDraw = new DrawBox($('data-draw'), { onchange: updateAddButton });
 
-const BRUSHES = [['thin', 0.75], ['medium', 1.15], ['thick', 1.7]];
-function buildBrushPicker() {
-    const box = $('brush-pick');
-    BRUSHES.forEach(([name, sigma], i) => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'seg-btn' + (i === 1 ? ' is-active' : '');
-        b.textContent = name;
-        b.title = `${name} strokes in both draw boxes`;
-        b.addEventListener('click', () => {
-            draw.setBrush(sigma);
-            dataDraw.setBrush(sigma);
-            box.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('is-active', x === b));
-        });
-        box.append(b);
-    });
-}
-
 function updateAddButton() {
     $('add-example').disabled = dataDraw.empty || state.pickedLabel == null;
 }
@@ -87,14 +70,17 @@ function updateAddButton() {
         state.test = test;
         state.ref = ref;
     } catch (err) {
-        text.textContent = `failed to load data: ${err.message}`;
+        showLoadError(text, err);
         throw err;
     }
     $('loader').classList.add('done');
 
     loadUserData();
     buildRefNet();
-    buildBrushPicker();
+    buildBrushPicker($('brush-pick'), (sigma) => {
+        draw.setBrush(sigma);
+        dataDraw.setBrush(sigma);
+    }, 'strokes in both draw boxes');
     renderLayerEditor();
     renderLabelPick();
     renderGallery();
@@ -126,6 +112,7 @@ function resetTrainingState() {
     state.playing = false;
     state.probe = null;
     $('train').textContent = 'train';
+    $('train-note').textContent = '';
     lossChart.reset();
     accChart.reset();
     $('shape-note').textContent = state.net.sizes.join(' → ');
@@ -169,7 +156,7 @@ function classify(pulse = false) {
     $('pred').textContent = draw.empty && !state.loadedSample ? '–' : String(best);
 
     pipeline.setState(state.net, { acts: fwd.acts, zs: fwd.zs }, state.input);
-    if (pulse) pipeline.startPulse();
+    if (pulse && !prefersReducedMotion()) pipeline.startPulse();
     pipeline.draw();
 }
 
@@ -194,10 +181,9 @@ function fillSamples() {
         c.style.width = '34px';
         c.style.height = '34px';
         c.className = 'pix';
-        c.title = `real test digit: ${d}`;
         const img = state.test.image(idx);
         drawHeat(c, img, 28, 28, { max: 1 });
-        c.addEventListener('click', () => {
+        makeClickable(c, `load a real test digit: ${d}`, () => {
             state.loadedSample = true;
             draw.setValue(img);
             state.loadedSample = false;
@@ -311,6 +297,12 @@ function setPlaying(on) {
         $('data-note').textContent = 'no examples yet — draw some digits below first.';
         return;
     }
+    // the pretrained net was trained with Adam on a decaying schedule; plain
+    // SGD at a big step can knock it out of its valley, which looks like a bug
+    if (on && state.usingRef && state.lr >= 0.1) {
+        $('train-note').textContent = 'continuing from the pretrained net — it was trained with a gentler '
+            + 'optimizer, so a step this big may knock accuracy down at first. Try 0.01, or reset for a fresh net.';
+    }
     state.playing = on;
     $('train').textContent = on ? 'pause' : 'train';
     if (on) state.usingRef = false;
@@ -367,7 +359,9 @@ function drawBowl() {
     if (!state.probe) {
         ctx.fillStyle = '#5f5c55';
         ctx.textAlign = 'center';
-        ctx.fillText('train a step to measure the landscape', w / 2, h / 2 + 6);
+        ctx.font = '15px "Plex Mono", ui-monospace, monospace';
+        ctx.fillText('train an epoch to measure the', w / 2, h / 2 - 6);
+        ctx.fillText('real loss landscape here', w / 2, h / 2 + 16);
         return;
     }
     const { alphas, losses } = state.probe;
@@ -444,7 +438,7 @@ function renderLayerEditor() {
         const label = document.createElement('span');
         label.className = 'lc-label';
         label.textContent = `hidden ${idx + 1}`;
-        const minus = mkBtn('−', () => {
+        const minus = mkBtn('−', `fewer neurons in hidden layer ${idx + 1}`, () => {
             if (state.hiddenSizes[idx] > 2) {
                 state.hiddenSizes[idx]--;
                 renderLayerEditor();
@@ -454,7 +448,7 @@ function renderLayerEditor() {
         const value = document.createElement('span');
         value.className = 'lc-count';
         value.textContent = String(count);
-        const plus = mkBtn('+', () => {
+        const plus = mkBtn('+', `more neurons in hidden layer ${idx + 1}`, () => {
             if (state.hiddenSizes[idx] < 48) {
                 state.hiddenSizes[idx]++;
                 renderLayerEditor();
@@ -468,11 +462,12 @@ function renderLayerEditor() {
     $('load-ref').disabled = JSON.stringify(state.hiddenSizes) !== JSON.stringify(refSizes);
 }
 
-function mkBtn(text, fn) {
+function mkBtn(text, label, fn) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'lc-btn';
     b.textContent = text;
+    b.setAttribute('aria-label', label);
     b.addEventListener('click', fn);
     return b;
 }
@@ -483,9 +478,16 @@ function loadUserData() {
         const raw = localStorage.getItem(STORE_KEY);
         if (raw) {
             const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed.examples)) state.userData = parsed.examples;
+            if (Array.isArray(parsed.examples)) state.userData = cleanExamples(parsed.examples);
         }
     } catch { /* fresh start */ }
+}
+
+// keep only well-formed examples: a 0-9 label and 784 pixel values in 0..255
+function cleanExamples(list) {
+    return list.filter((e) => e && Number.isInteger(e.label) && e.label >= 0 && e.label <= 9
+        && Array.isArray(e.px) && e.px.length === 784
+        && e.px.every((v) => Number.isFinite(v) && v >= 0 && v <= 255)).slice(0, 500);
 }
 
 function saveUserData() {
@@ -500,17 +502,11 @@ function renderLabelPick() {
     const box = $('label-pick');
     box.textContent = '';
     for (let d = 0; d < 10; d++) {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'seg-btn';
-        b.textContent = String(d);
-        b.addEventListener('click', () => {
+        segButton(box, String(d), false, () => {
             state.pickedLabel = d;
-            box.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('is-active', x === b));
             $('add-example').textContent = `add drawing as “${d}”`;
             updateAddButton();
         });
-        box.append(b);
     }
 }
 
@@ -539,11 +535,10 @@ function renderGallery() {
             c.style.width = '30px';
             c.style.height = '30px';
             c.className = 'pix';
-            c.title = 'click to delete';
             const f = new Float32Array(784);
             for (let p = 0; p < 784; p++) f[p] = ex.px[p] / 255;
             drawHeat(c, f, 28, 28, { max: 1 });
-            c.addEventListener('click', () => {
+            makeClickable(c, `delete this “${d}”`, () => {
                 state.userData.splice(i, 1);
                 saveUserData();
                 renderGallery();
@@ -671,11 +666,27 @@ $('add-example').addEventListener('click', () => {
 $('data-clear').addEventListener('click', () => dataDraw.clear());
 $('data-undo').addEventListener('click', () => dataDraw.undo());
 
-$('clear-data').addEventListener('click', () => {
+// deleting a whole hand-drawn dataset takes two clicks
+let confirmTimer = 0;
+$('clear-data').addEventListener('click', (e) => {
+    const btn = e.currentTarget;
+    if (!state.userData.length) return;
+    if (!confirmTimer) {
+        btn.textContent = `delete all ${state.userData.length}? click again`;
+        confirmTimer = setTimeout(() => {
+            confirmTimer = 0;
+            btn.textContent = 'delete all';
+        }, 3000);
+        return;
+    }
+    clearTimeout(confirmTimer);
+    confirmTimer = 0;
+    btn.textContent = 'delete all';
     state.userData = [];
     saveUserData();
     renderGallery();
     updateStatus();
+    $('data-note').textContent = 'dataset deleted.';
 });
 
 $('export-data').addEventListener('click', () => {
@@ -697,14 +708,15 @@ $('import-data').addEventListener('click', () => {
     try {
         const parsed = JSON.parse(io.value);
         if (!Array.isArray(parsed.examples)) throw new Error('bad shape');
-        const clean = parsed.examples.filter((e) => Number.isInteger(e.label)
-            && e.label >= 0 && e.label <= 9 && Array.isArray(e.px) && e.px.length === 784);
-        state.userData = clean.slice(0, 500);
+        const clean = cleanExamples(parsed.examples);
+        const skipped = parsed.examples.length - clean.length;
+        state.userData = clean;
         saveUserData();
         renderGallery();
         updateStatus();
         io.hidden = true;
-        $('data-note').textContent = `imported ${state.userData.length} examples.`;
+        $('data-note').textContent = `imported ${state.userData.length} examples`
+            + (skipped > 0 ? ` (skipped ${skipped} that were malformed or over the 500 cap).` : '.');
     } catch {
         $('data-note').textContent = 'could not parse that JSON.';
     }
