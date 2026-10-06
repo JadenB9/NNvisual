@@ -6,6 +6,7 @@ import { mulberry32, fillGaussian } from '../engine/rng.js';
 import { drawSignedImage, drawHeat } from '../ui/heat.js';
 import { DrawBox } from '../ui/drawbox.js';
 import { createImageSampler } from './diffusion-i2i.js';
+import { buildBrushPicker, segButton, makeClickable, showLoadError } from '../ui/controls.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -16,7 +17,6 @@ const CLASS_COLORS = [
 
 // the class the model trains on when it is shown no label at all
 const NULL_CLASS = 10;
-const BRUSHES = [['thin', 0.75], ['medium', 1.15], ['thick', 1.7]];
 const GRID_N = 9;
 
 const state = {
@@ -74,7 +74,7 @@ const state = {
         state.dec = new MLP(aw.meta.decSizes, { task: 'regress' }, mulberry32(3)).loadTensors(aw.tensors, 'dec_');
         state.test = test;
     } catch (err) {
-        text.textContent = `failed to load: ${err.message}`;
+        showLoadError(text, err);
         throw err;
     }
     $('loader').classList.add('done');
@@ -83,8 +83,11 @@ const state = {
 
     buildTabs();
     buildForward();
+    const shared = readLinkState();
     buildReverse();
     buildLatent();
+    // someone opened a shared link: grow the digit they were looking at
+    if (shared) $('generate').click();
     requestAnimationFrame(loop);
 })();
 
@@ -93,7 +96,10 @@ function buildTabs() {
     const tabs = document.querySelectorAll('.tab-row .seg-btn');
     tabs.forEach((b) => {
         b.addEventListener('click', () => {
-            tabs.forEach((x) => x.classList.toggle('is-active', x === b));
+            tabs.forEach((x) => {
+                x.classList.toggle('is-active', x === b);
+                x.setAttribute('aria-selected', String(x === b));
+            });
             const onDiffusion = b.dataset.tab === 'diffusion';
             $('tab-diffusion').hidden = !onDiffusion;
             $('tab-latent').hidden = onDiffusion;
@@ -103,22 +109,6 @@ function buildTabs() {
                 cancelGrid();
             }
         });
-    });
-}
-
-// brush pickers, one per draw box
-function buildBrushPicker(id, drawBox) {
-    const box = $(id);
-    BRUSHES.forEach(([name, sigma], i) => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'seg-btn' + (i === 1 ? ' is-active' : '');
-        b.textContent = name;
-        b.addEventListener('click', () => {
-            drawBox.setBrush(sigma);
-            box.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('is-active', x === b));
-        });
-        box.append(b);
     });
 }
 
@@ -165,7 +155,7 @@ function buildForward() {
         c.className = 'pix';
         const img = state.test.image(idx);
         drawHeat(c, img, 28, 28, { max: 1 });
-        c.addEventListener('click', () => {
+        makeClickable(c, `noise a real ${d}`, () => {
             for (let p = 0; p < 784; p++) state.fwdX0[p] = img[p] * 2 - 1;
             drawForward();
         });
@@ -235,29 +225,28 @@ function drawSchedule(tMark = 0) {
 function buildReverse() {
     const box = $('class-pick');
     for (let d = 0; d <= NULL_CLASS; d++) {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'seg-btn' + (d === state.classIdx ? ' is-active' : '');
-        b.textContent = d === NULL_CLASS ? 'any' : String(d);
+        const b = segButton(box, d === NULL_CLASS ? 'any' : String(d), d === state.classIdx, () => {
+            state.classIdx = d;
+            syncGuidance();
+            writeLinkState();
+        });
         b.title = d === NULL_CLASS
             ? 'the null class — the model with no digit in mind'
             : `condition the model on the digit ${d}`;
-        b.addEventListener('click', () => {
-            state.classIdx = d;
-            box.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('is-active', x === b));
-            syncGuidance();
-        });
-        box.append(b);
     }
     syncGuidance();
 
     $('guide').addEventListener('input', (e) => {
         $('guide-out').textContent = parseFloat(e.target.value).toFixed(1);
+        writeLinkState();
     });
     $('seed').addEventListener('input', (e) => {
         $('seed-out').textContent = e.target.value;
         syncStart();
+        writeLinkState();
     });
+    $('rev-steps').addEventListener('change', writeLinkState);
+    $('copy-link').addEventListener('click', copyLink);
     $('rev-speed').addEventListener('input', (e) => {
         state.stepMs = parseInt(e.target.value, 10);
         $('speed-out').textContent = e.target.value;
@@ -275,15 +264,87 @@ function buildReverse() {
         doStep();
     });
     $('grid-run').addEventListener('click', runGrid);
+    $('film').addEventListener('keydown', (e) => {
+        if (!state.sampler || !state.sampler.history.length) return;
+        const last = state.sampler.history.length - 1;
+        let i = state.curFrame;
+        if (e.key === 'ArrowLeft') i--;
+        else if (e.key === 'ArrowRight') i++;
+        else if (e.key === 'Home') i = 0;
+        else if (e.key === 'End') i = last;
+        else return;
+        e.preventDefault();
+        renderFrame(Math.max(0, Math.min(last, i)));
+    });
 
     // img2img: an optional starting image instead of pure noise
     state.revDraw = new DrawBox($('rev-draw'), { onchange: syncStart });
-    buildBrushPicker('rev-brush', state.revDraw);
+    buildBrushPicker($('rev-brush'), (sigma) => state.revDraw.setBrush(sigma));
     $('rev-draw-clear').addEventListener('click', () => state.revDraw.clear());
     $('rev-draw-undo').addEventListener('click', () => state.revDraw.undo());
     $('strength').addEventListener('input', syncStart);
 
     syncStart();
+}
+
+// ---------- shareable settings ----------
+// The reverse run is deterministic given class, seed, steps and guidance, so
+// those four in the URL hash reproduce the exact same digit for anyone.
+function readLinkState() {
+    const q = new URLSearchParams(location.hash.slice(1));
+    const int = (key, lo, hi) => {
+        const v = parseInt(q.get(key), 10);
+        return Number.isInteger(v) && v >= lo && v <= hi ? v : null;
+    };
+    const digit = int('digit', 0, NULL_CLASS);
+    if (digit != null) state.classIdx = digit;
+    const seed = int('seed', 1, 99);
+    if (seed != null) {
+        $('seed').value = String(seed);
+        $('seed-out').textContent = String(seed);
+    }
+    const steps = q.get('steps');
+    if ([...$('rev-steps').options].some((o) => o.value === steps)) $('rev-steps').value = steps;
+    const guide = parseFloat(q.get('guidance'));
+    if (Number.isFinite(guide) && guide >= 0 && guide <= 4) {
+        $('guide').value = String(Math.round(guide * 2) / 2);
+        $('guide-out').textContent = parseFloat($('guide').value).toFixed(1);
+    }
+    return digit != null;
+}
+
+function linkHash() {
+    const q = new URLSearchParams({
+        digit: String(state.classIdx),
+        seed: $('seed').value,
+        steps: $('rev-steps').value,
+        guidance: $('guide').value,
+    });
+    return `#${q}`;
+}
+
+// debounced: dragging the seed slider would otherwise hit the browser's
+// replaceState rate limit
+let linkTimer = 0;
+function writeLinkState() {
+    clearTimeout(linkTimer);
+    linkTimer = setTimeout(() => {
+        try { history.replaceState(null, '', linkHash()); } catch { /* rate limited */ }
+    }, 250);
+}
+
+async function copyLink() {
+    const url = location.href.split('#')[0] + linkHash();
+    const btn = $('copy-link');
+    try {
+        await navigator.clipboard.writeText(url);
+        btn.textContent = 'copied';
+    } catch {
+        // no clipboard access (old browser, insecure origin) — the address bar has it
+        try { history.replaceState(null, '', linkHash()); } catch { /* rate limited */ }
+        btn.textContent = 'link is in the address bar';
+    }
+    setTimeout(() => { btn.textContent = 'copy link'; }, 1800);
 }
 
 // guidance amplifies (class - null); with the null class picked there is
@@ -472,7 +533,7 @@ function buildLatent() {
     });
     $('lat-clear').addEventListener('click', () => state.latDraw.clear());
     $('lat-undo').addEventListener('click', () => state.latDraw.undo());
-    buildBrushPicker('lat-brush', state.latDraw);
+    buildBrushPicker($('lat-brush'), (sigma) => state.latDraw.setBrush(sigma));
 
     const strip = $('lat-samples');
     const fillStrip = () => {
@@ -493,7 +554,7 @@ function buildLatent() {
             c.className = 'pix';
             const img = state.test.image(idx);
             drawHeat(c, img, 28, 28, { max: 1 });
-            c.addEventListener('click', () => state.latDraw.setValue(img));
+            makeClickable(c, `encode a real ${d}`, () => state.latDraw.setValue(img));
             strip.append(c);
         }
     };
@@ -535,6 +596,21 @@ function buildLatent() {
     });
     map.addEventListener('pointermove', (e) => { if (dragging) pick(e); });
     map.addEventListener('pointerup', () => { dragging = false; });
+    map.addEventListener('pointercancel', () => { dragging = false; });
+    map.addEventListener('keydown', (e) => {
+        const dirs = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] };
+        const dir = dirs[e.key];
+        if (!dir) return;
+        e.preventDefault();
+        const b = latentBounds();
+        const stepX = (b.x1 - b.x0) * (e.shiftKey ? 0.1 : 0.02);
+        const stepY = (b.y1 - b.y0) * (e.shiftKey ? 0.1 : 0.02);
+        const z0 = Math.max(b.x0, Math.min(b.x1, state.z[0] + dir[0] * stepX));
+        const z1 = Math.max(b.y0, Math.min(b.y1, state.z[1] + dir[1] * stepY));
+        state.z = [z0, z1];
+        decodeAt(z0, z1);
+        drawLatentMap();
+    });
 
     $('set-a').addEventListener('click', () => { state.zA = state.z.slice(); lerpMove(); });
     $('set-b').addEventListener('click', () => { state.zB = state.z.slice(); lerpMove(); });
