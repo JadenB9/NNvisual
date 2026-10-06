@@ -2,6 +2,7 @@ import { DrawBox } from './drawbox.js';
 import { drawHeat } from './heat.js';
 import { mulberry32 } from '../engine/rng.js';
 import { preprocessDrawing } from '../engine/mnist.js';
+import { makeClickable } from './controls.js';
 
 // The draw-a-digit input rail shared by the CNN and diffusion pages:
 // draw box + clear/undo + real-sample strip + preprocessed preview.
@@ -40,10 +41,9 @@ export function initInputPanel({ drawId, clearId, undoId, samplesId, shuffleId, 
             c.style.width = '34px';
             c.style.height = '34px';
             c.className = 'pix';
-            c.title = `real test digit: ${d}`;
             const img = testSet.image(idx);
             drawHeat(c, img, 28, 28, { max: 1 });
-            c.addEventListener('click', () => box.setValue(img));
+            makeClickable(c, `load a real test digit: ${d}`, () => box.setValue(img));
             strip.append(c);
         }
     }

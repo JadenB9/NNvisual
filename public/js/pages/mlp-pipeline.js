@@ -22,7 +22,13 @@ export class Pipeline {
         this.geom = null;
 
         canvas.addEventListener('pointermove', (e) => this.onMove(e));
-        canvas.addEventListener('pointerleave', () => {
+        // a finger has no hover: a tap pins the inspector on a neuron, and a
+        // tap on empty space (or the next tap) moves or closes it
+        canvas.addEventListener('pointerdown', (e) => {
+            if (e.pointerType !== 'mouse') this.onMove(e);
+        });
+        canvas.addEventListener('pointerleave', (e) => {
+            if (e.pointerType !== 'mouse') return;
             this.hover = null;
             this.inspector.classList.remove('show');
             this.draw();
@@ -47,10 +53,13 @@ export class Pipeline {
         if (this.canvas.height !== Math.round(h * dpr)) this.canvas.height = Math.round(h * dpr);
 
         const sizes = this.net.sizes;
-        const gridSize = Math.min(120, h * 0.3);
+        // on a phone-width canvas the 28x28 grid would squeeze the layers
+        // together, and the input panel already shows it, so drop it
+        const compact = w < 520;
+        const gridSize = compact ? 0 : Math.min(120, h * 0.3);
         const gridX = 12;
-        const stripX = gridX + gridSize + 46;
-        const outX = w - 46;
+        const stripX = compact ? 18 : gridX + gridSize + 46;
+        const outX = w - (compact ? 30 : 46);
         const layerCount = sizes.length - 1; // hidden layers + output columns
         const span = outX - (stripX + 60);
         const xs = [stripX];
@@ -68,7 +77,7 @@ export class Pipeline {
             const spacing = Math.min(usable / Math.max(count - 1, 1), 30);
             return Math.max(3, Math.min(8, spacing * 0.42));
         };
-        this.geom = { w, h, dpr, gridX, gridSize, stripX, xs, nodeY, nodeR, stripTop: 34, stripH: h - 68 };
+        this.geom = { w, h, dpr, compact, gridX, gridSize, stripX, xs, nodeY, nodeR, stripTop: 34, stripH: h - 68 };
         return this.geom;
     }
 
@@ -129,8 +138,8 @@ export class Pipeline {
         this.inspText.textContent = lines.join('\n');
 
         const wrap = this.canvas.parentElement.getBoundingClientRect();
-        const bx = Math.min(px + 18, wrap.width - 250);
-        const by = Math.min(py + 12, wrap.height - 190);
+        const bx = Math.max(0, Math.min(px + 18, wrap.width - 250));
+        const by = Math.max(0, Math.min(py + 12, wrap.height - 190));
         this.inspector.style.left = `${bx}px`;
         this.inspector.style.top = `${by}px`;
         this.inspector.classList.add('show');
@@ -151,7 +160,7 @@ export class Pipeline {
 
         // ---- input grid + unrolled strip ----
         if (this.input) {
-            this.drawInputGrid(ctx, g);
+            if (!g.compact) this.drawInputGrid(ctx, g);
             this.drawStrip(ctx, g);
         }
 
@@ -242,10 +251,16 @@ export class Pipeline {
         ctx.fillStyle = '#5f5c55';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'alphabetic';
-        ctx.fillText('input 28×28', g.gridX + g.gridSize / 2, 24);
-        ctx.fillText('784', g.stripX, 24);
-        for (let l = 1; l < sizes.length - 1; l++) ctx.fillText(`hidden ${l} (${sizes[l]})`, g.xs[l], 24);
-        ctx.fillText('output (10)', g.xs[sizes.length - 1], 24);
+        // short captions when the columns sit too close for the long ones
+        const gap = g.xs[2] - g.xs[1] || Infinity;
+        const short = gap < 120;
+        if (!g.compact) ctx.fillText('input 28×28', g.gridX + g.gridSize / 2, 24);
+        // under the strip, so it never collides with the first hidden caption
+        ctx.fillText('784', g.stripX, g.stripTop + g.stripH + 18);
+        for (let l = 1; l < sizes.length - 1; l++) {
+            ctx.fillText(short ? `h${l} (${sizes[l]})` : `hidden ${l} (${sizes[l]})`, g.xs[l], 24);
+        }
+        ctx.fillText(short ? 'out' : 'output (10)', g.xs[sizes.length - 1], 24);
     }
 
     edge(ctx, x0, y0, x1, y1, w, m, stage, bpActive, grads, gl, gj, gi) {

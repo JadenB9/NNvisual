@@ -31,6 +31,17 @@
     letter-spacing: 0.01em;
 }
 
+.chooser-hint {
+    margin: calc(clamp(22px, 4vh, 44px) * -0.6) auto 0;
+    max-width: 52ch;
+    text-align: center;
+    font-size: 14px;
+    color: var(--faint);
+}
+
+.chooser-hint a { color: var(--link-blue); text-decoration: none; }
+.chooser-hint a:hover { text-decoration: underline; }
+
 .choice-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -59,8 +70,12 @@
         border-color 0.22s var(--ease),
         box-shadow 0.22s var(--ease);
     animation: choice-in 0.5s var(--ease) both;
-    animation-delay: calc(var(--d, 0) * 70ms);
 }
+
+/* staggered entrance — set here rather than inline, which the page CSP blocks */
+.choice:nth-child(2) { animation-delay: 70ms; }
+.choice:nth-child(3) { animation-delay: 140ms; }
+.choice:nth-child(4) { animation-delay: 210ms; }
 
 @keyframes choice-in {
     from { opacity: 0; transform: translateY(10px); }

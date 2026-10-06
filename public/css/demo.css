@@ -313,3 +313,11 @@
 @media (max-width: 980px) {
     .row { flex-direction: column; }
 }
+
+/* phones: let the topbar wrap instead of pushing the page sideways */
+@media (max-width: 640px) {
+    .topbar { flex-wrap: wrap; gap: 6px 12px; padding: 10px 16px; }
+    .page-chip { white-space: normal; }
+    #net-status { flex-basis: 100%; text-align: left; }
+    .demo { padding: 12px; }
+}

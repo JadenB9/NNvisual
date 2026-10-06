@@ -35,6 +35,12 @@ computed live by models running in vanilla JavaScript.
   every step, with classifier-free guidance you control. The latent tab
   encodes 1,000 digits through a 2-D autoencoder bottleneck into a plane you
   can drag to decode.
+  Sampling is deterministic, so **copy link** shares a URL
+  (`#digit=5&seed=12&steps=15&guidance=2`) that regrows the exact same digit.
+
+Every page works at phone width with touch drawing, and the clickable
+canvases (sample digits, feature maps, the attention matrix, the denoising
+film, the latent plane) are reachable and operable from the keyboard.
 
 ## How it's built
 

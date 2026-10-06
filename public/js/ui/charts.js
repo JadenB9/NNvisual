@@ -27,7 +27,7 @@ export class LineChart {
         ctx.font = '19px "Plex Mono", ui-monospace, monospace';
 
         const n = Math.max(...this.series.map((s) => s.data.length));
-        if (n < 2) {
+        if (n < 1) {
             ctx.fillStyle = '#5f5c55';
             ctx.textAlign = 'center';
             ctx.fillText('no data yet', w / 2, h / 2 + 6);
@@ -41,7 +41,7 @@ export class LineChart {
             max *= 1.05;
         }
         const pad = 26;
-        const xAt = (i, len) => pad + (i / (len - 1)) * (w - 2 * pad);
+        const xAt = (i, len) => pad + (i / Math.max(1, len - 1)) * (w - 2 * pad);
         const yAt = (v) => h - pad - ((v - this.yMin) / (max - this.yMin)) * (h - 2 * pad);
 
         ctx.strokeStyle = '#24292d';
@@ -52,6 +52,14 @@ export class LineChart {
         ctx.stroke();
 
         for (const s of this.series) {
+            if (s.data.length === 1) {
+                // one epoch in: a single point, no line yet
+                ctx.fillStyle = s.color;
+                ctx.beginPath();
+                ctx.arc(xAt(0, 1), yAt(s.data[0]), 5, 0, Math.PI * 2);
+                ctx.fill();
+                continue;
+            }
             if (s.data.length < 2) continue;
             const step = Math.max(1, Math.floor(s.data.length / 240));
             ctx.strokeStyle = s.color;
