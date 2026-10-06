@@ -88,6 +88,8 @@
 
 .film canvas.is-cur { border-color: var(--text-bright); }
 
+.film:focus-visible { outline-offset: 4px; border-radius: 4px; }
+
 /* a disabled slider still reads, it just stops inviting a drag */
 .field.is-off { opacity: 0.42; }
 .field.is-off input { cursor: not-allowed; }
@@ -195,4 +197,13 @@
 
 @media (max-width: 980px) {
     .fwd-panel, .enc-panel, .dec-panel { width: 100%; }
+}
+
+/* phones: wrap the sliders and the three reverse canvases instead of
+   letting them run off the right edge */
+@media (max-width: 640px) {
+    .rev-opts { flex-wrap: wrap; gap: 10px 16px; }
+    .rev-opts .field { flex: 1 1 40%; }
+    .rev-canvases { flex-wrap: wrap; }
+    .tab-row { flex-direction: row; flex-wrap: wrap; }
 }
