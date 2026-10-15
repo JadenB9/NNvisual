@@ -3,17 +3,13 @@ import { fetchDataset, preprocessDrawing } from '../engine/mnist.js';
 import { MLP } from '../engine/mlp.js';
 import { makeSchedule, forwardNoise, tEmbed, createSampler } from '../engine/diffusion.js';
 import { mulberry32, fillGaussian } from '../engine/rng.js';
-import { drawSignedImage, drawHeat } from '../ui/heat.js';
+import { drawSignedImage, drawHeat, repaintHeatmaps, forgetHeat } from '../ui/heat.js';
+import { tokens, withAlpha, classColors, onThemeChange } from '../ui/theme.js';
 import { DrawBox } from '../ui/drawbox.js';
 import { createImageSampler } from './diffusion-i2i.js';
 import { buildBrushPicker, segButton, makeClickable, showLoadError } from '../ui/controls.js';
 
 const $ = (id) => document.getElementById(id);
-
-const CLASS_COLORS = [
-    '#6a9955', '#c25b4e', '#86c3d6', '#c2a24e', '#9d7bd8',
-    '#4ec2a4', '#d88ab0', '#8fb54e', '#d8873b', '#7b95d8',
-];
 
 // the class the model trains on when it is shown no label at all
 const NULL_CLASS = 10;
@@ -190,30 +186,31 @@ function drawSchedule(tMark = 0) {
     const h = canvas.height;
     ctx.clearRect(0, 0, w, h);
     const pad = 24;
-    ctx.strokeStyle = '#24292d';
+    const t = tokens();
+    ctx.strokeStyle = t.border;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(pad, h - pad);
     ctx.lineTo(w - pad, h - pad);
     ctx.stroke();
 
-    ctx.strokeStyle = '#86c3d6';
+    ctx.strokeStyle = t.linkBlue;
     ctx.lineWidth = 2.5;
     ctx.beginPath();
-    for (let t = 0; t <= state.meta.T; t++) {
-        const x = pad + (t / state.meta.T) * (w - 2 * pad);
-        const y = h - pad - state.alphaBar[t] * (h - 2 * pad);
-        if (t === 0) ctx.moveTo(x, y);
+    for (let step = 0; step <= state.meta.T; step++) {
+        const x = pad + (step / state.meta.T) * (w - 2 * pad);
+        const y = h - pad - state.alphaBar[step] * (h - 2 * pad);
+        if (step === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
     }
     ctx.stroke();
 
     const mx = pad + (tMark / state.meta.T) * (w - 2 * pad);
-    ctx.fillStyle = '#eeebe3';
+    ctx.fillStyle = t.ink;
     ctx.beginPath();
     ctx.arc(mx, h - pad - state.alphaBar[tMark] * (h - 2 * pad), 5, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#5f5c55';
+    ctx.fillStyle = t.faint;
     ctx.font = '17px "Plex Mono", ui-monospace, monospace';
     ctx.textAlign = 'left';
     ctx.fillText('ᾱ', 6, 20);
@@ -645,6 +642,7 @@ function showRecon(input, recon) {
     const canvas = $('lat-recon');
     if (state.latDraw.empty) {
         canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+        forgetHeat(canvas);
         $('recon-mse').textContent = 'recon mse — draw something first';
         return;
     }
@@ -680,9 +678,11 @@ function drawLatentMap() {
     const b = latentBounds();
     const sx = (x) => ((x - b.x0) / (b.x1 - b.x0)) * w;
     const sy = (y) => h - ((y - b.y0) / (b.y1 - b.y0)) * h;
+    const colors = classColors();
+    const t = tokens();
 
     for (const [x, y, label] of state.latentPoints) {
-        ctx.fillStyle = CLASS_COLORS[label];
+        ctx.fillStyle = colors[label];
         ctx.globalAlpha = 0.75;
         ctx.beginPath();
         ctx.arc(sx(x), sy(y), 3, 0, Math.PI * 2);
@@ -693,13 +693,13 @@ function drawLatentMap() {
     // legend
     ctx.font = '16px "Plex Mono", ui-monospace, monospace';
     for (let d = 0; d < 10; d++) {
-        ctx.fillStyle = CLASS_COLORS[d];
+        ctx.fillStyle = colors[d];
         ctx.fillText(String(d), 10 + d * 20, 20);
     }
 
     // interpolation line
     if (state.zA && state.zB) {
-        ctx.strokeStyle = 'rgba(238,235,227,0.4)';
+        ctx.strokeStyle = withAlpha(t.ink, 0.4);
         ctx.setLineDash([5, 4]);
         ctx.beginPath();
         ctx.moveTo(sx(state.zA[0]), sy(state.zA[1]));
@@ -709,7 +709,7 @@ function drawLatentMap() {
     }
 
     // the current point
-    ctx.strokeStyle = '#eeebe3';
+    ctx.strokeStyle = t.ink;
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.arc(sx(state.z[0]), sy(state.z[1]), 8, 0, Math.PI * 2);
@@ -724,3 +724,14 @@ function loop(now) {
     }
     requestAnimationFrame(loop);
 }
+
+// a theme switch repaints every canvas in the new palette; the thumbnails,
+// film and grid come back through the heatmap registry
+onThemeChange(() => {
+    if (!state.meta) return;
+    repaintHeatmaps();
+    state.revDraw.render();
+    state.latDraw.render();
+    drawSchedule(parseInt($('fwd-t').value, 10));
+    drawLatentMap();
+});

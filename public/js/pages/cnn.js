@@ -1,7 +1,8 @@
 import { fetchWeights } from '../engine/weights.js';
 import { fetchDataset } from '../engine/mnist.js';
 import { ConvNet, conv2dForward } from '../engine/conv.js';
-import { drawHeat } from '../ui/heat.js';
+import { drawHeat, repaintHeatmaps } from '../ui/heat.js';
+import { tokens, onThemeChange } from '../ui/theme.js';
 import { Bars } from '../ui/bars.js';
 import { initInputPanel } from '../ui/inputpanel.js';
 import { buildBrushPicker, makeClickable, prefersReducedMotion, showLoadError } from '../ui/controls.js';
@@ -224,7 +225,7 @@ function drawPreviewWithField(rect) {
     const ctx = canvas.getContext('2d');
     const px = canvas.width / 28;
     const [x, y, w, h] = rect;
-    ctx.strokeStyle = '#86c3d6';
+    ctx.strokeStyle = tokens().linkBlue;
     ctx.lineWidth = 2;
     ctx.strokeRect(x * px + 1, y * px + 1, Math.min(w, 28 - x) * px - 2, Math.min(h, 28 - y) * px - 2);
 }
@@ -353,7 +354,7 @@ function drawScan() {
     drawHeat(inC, state.input, 28, 28, { max: 1 });
     const ctx = inC.getContext('2d');
     const px = inC.width / 28;
-    ctx.strokeStyle = '#86c3d6';
+    ctx.strokeStyle = tokens().linkBlue;
     ctx.lineWidth = 2;
     ctx.strokeRect(ox * px + 0.5, oy * px + 0.5, 3 * px - 1, 3 * px - 1);
 
@@ -498,3 +499,12 @@ function runPlayground() {
     for (const v of out) peak = Math.max(peak, Math.abs(v));
     updateNormNote(peak);
 }
+
+// a theme switch repaints every canvas in the new palette; the strips and
+// maps come back through the heatmap registry, the scan adds its window
+onThemeChange(() => {
+    if (!state.stages) return;
+    repaintHeatmaps();
+    panel.box.render();
+    drawScan();
+});

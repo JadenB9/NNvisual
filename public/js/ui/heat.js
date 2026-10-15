@@ -1,9 +1,7 @@
-// Small heatmap renderers. Grayscale maps [0,max] onto bg->bright ink;
-// signed maps [-max,max] onto red->bg->green (the site's err/ok hues).
-const BG = [14, 16, 17];
-const INK = [238, 235, 227];
-const POS = [106, 153, 85];
-const NEG = [194, 91, 78];
+// Small heatmap renderers. Grayscale maps [0,max] onto bg->ink; signed maps
+// [-max,max] onto err->bg->ok (the site's red/green). The colors are the page's
+// theme tokens, read at draw time.
+import { tokens, hexToRgb } from './theme.js';
 
 let scratch = null;
 
@@ -16,7 +14,33 @@ function ensureScratch(w, h) {
     return scratch;
 }
 
+// Every canvas remembers its last draw so a theme switch can repaint all of
+// them at once (sample strips, galleries, film frames) without each page
+// keeping its own list. Pruned when it grows, since pages rebuild strips.
+const painted = new Map();
+
+function remember(canvas, fn, args) {
+    if (painted.size > 600) {
+        for (const c of painted.keys()) if (!c.isConnected) painted.delete(c);
+    }
+    painted.set(canvas, { fn, args });
+}
+
+export function repaintHeatmaps() {
+    for (const [canvas, { fn, args }] of [...painted]) {
+        if (canvas.isConnected) fn(canvas, ...args);
+        else painted.delete(canvas);
+    }
+}
+
+function palette() {
+    const t = tokens();
+    return { BG: hexToRgb(t.bg), INK: hexToRgb(t.ink), POS: hexToRgb(t.ok), NEG: hexToRgb(t.err) };
+}
+
 export function drawHeat(canvas, data, w, h, { signed = false, max = null } = {}) {
+    remember(canvas, drawHeat, [data, w, h, { signed, max }]);
+    const { BG, INK, POS, NEG } = palette();
     let peak = max;
     if (peak == null) {
         peak = 1e-9;
@@ -52,6 +76,8 @@ export function drawHeat(canvas, data, w, h, { signed = false, max = null } = {}
 
 // [-1,1] images (diffusion space) onto grayscale.
 export function drawSignedImage(canvas, data, w, h) {
+    remember(canvas, drawSignedImage, [data, w, h]);
+    const { BG, INK } = palette();
     const off = ensureScratch(w, h);
     const octx = off.getContext('2d');
     const img = octx.createImageData(w, h);
@@ -68,4 +94,9 @@ export function drawSignedImage(canvas, data, w, h) {
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+}
+
+// forget a canvas that was cleared on purpose (nothing to repaint)
+export function forgetHeat(canvas) {
+    painted.delete(canvas);
 }

@@ -1,4 +1,7 @@
-// Minimal auto-scaling line chart for loss/accuracy histories.
+// Minimal auto-scaling line chart for loss/accuracy histories. Series colors
+// are token names (see ui/theme.js) so the chart follows the theme.
+import { tokens } from './theme.js';
+
 export class LineChart {
     constructor(canvas, series, { yMax = null, yMin = 0 } = {}) {
         this.canvas = canvas;
@@ -19,7 +22,22 @@ export class LineChart {
         this.draw();
     }
 
+    // a second series drawn in the quiet color, so two runs can be compared
+    pin(label) {
+        const live = this.series[0];
+        if (!live.data.length) return false;
+        this.series[1] = { color: 'faint', label, data: live.data.slice() };
+        this.draw();
+        return true;
+    }
+
+    unpin() {
+        this.series.length = 1;
+        this.draw();
+    }
+
     draw() {
+        const t = tokens();
         const ctx = this.canvas.getContext('2d');
         const w = this.canvas.width;
         const h = this.canvas.height;
@@ -28,7 +46,7 @@ export class LineChart {
 
         const n = Math.max(...this.series.map((s) => s.data.length));
         if (n < 1) {
-            ctx.fillStyle = '#5f5c55';
+            ctx.fillStyle = t.faint;
             ctx.textAlign = 'center';
             ctx.fillText('no data yet', w / 2, h / 2 + 6);
             return;
@@ -44,17 +62,19 @@ export class LineChart {
         const xAt = (i, len) => pad + (i / Math.max(1, len - 1)) * (w - 2 * pad);
         const yAt = (v) => h - pad - ((v - this.yMin) / (max - this.yMin)) * (h - 2 * pad);
 
-        ctx.strokeStyle = '#24292d';
+        ctx.strokeStyle = t.border;
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(pad, h - pad);
         ctx.lineTo(w - pad, h - pad);
         ctx.stroke();
 
-        for (const s of this.series) {
+        // the pinned run goes underneath the live one
+        for (const s of [...this.series].reverse()) {
+            const color = t[s.color] || s.color;
             if (s.data.length === 1) {
                 // one epoch in: a single point, no line yet
-                ctx.fillStyle = s.color;
+                ctx.fillStyle = color;
                 ctx.beginPath();
                 ctx.arc(xAt(0, 1), yAt(s.data[0]), 5, 0, Math.PI * 2);
                 ctx.fill();
@@ -62,7 +82,7 @@ export class LineChart {
             }
             if (s.data.length < 2) continue;
             const step = Math.max(1, Math.floor(s.data.length / 240));
-            ctx.strokeStyle = s.color;
+            ctx.strokeStyle = color;
             ctx.lineWidth = 2.5;
             ctx.beginPath();
             for (let i = 0; i < s.data.length; i += step) {
@@ -76,14 +96,14 @@ export class LineChart {
             ctx.stroke();
         }
 
-        ctx.fillStyle = '#5f5c55';
+        ctx.fillStyle = t.faint;
         ctx.textAlign = 'left';
         ctx.fillText(max.toFixed(2), 4, 20);
         let lx = pad;
         for (const s of this.series) {
             const last = s.data[s.data.length - 1];
             if (last == null) continue;
-            ctx.fillStyle = s.color;
+            ctx.fillStyle = t[s.color] || s.color;
             ctx.fillText(`${s.label} ${last.toFixed(3)}`, lx, h - 6);
             lx += ctx.measureText(`${s.label} ${last.toFixed(3)}`).width + 22;
         }

@@ -1,5 +1,7 @@
 // 28x28 drawing surface with a soft MNIST-style brush. The value is a
 // Float32Array in [0,1]; every stroke fires onchange (per animation frame).
+import { tokens, hexToRgb, withAlpha } from './theme.js';
+
 export class DrawBox {
     constructor(canvas, { size = 28, brush = 1.15, onchange = null } = {}) {
         this.canvas = canvas;
@@ -114,19 +116,24 @@ export class DrawBox {
     render() {
         const ctx = this.canvas.getContext('2d');
         const px = this.canvas.width / this.size;
-        ctx.fillStyle = '#0e1011';
+        const t = tokens();
+        const bg = hexToRgb(t.bg);
+        const ink = hexToRgb(t.ink);
+        ctx.fillStyle = t.bg;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         for (let y = 0; y < this.size; y++) {
             for (let x = 0; x < this.size; x++) {
                 const v = this.value[y * this.size + x];
                 if (v <= 0.01) continue;
-                const c = Math.round(14 + v * (238 - 14));
-                ctx.fillStyle = `rgb(${c},${c},${Math.round(17 + v * (227 - 17))})`;
+                const r = Math.round(bg[0] + v * (ink[0] - bg[0]));
+                const g = Math.round(bg[1] + v * (ink[1] - bg[1]));
+                const b = Math.round(bg[2] + v * (ink[2] - bg[2]));
+                ctx.fillStyle = `rgb(${r},${g},${b})`;
                 ctx.fillRect(x * px, y * px, px, px);
             }
         }
         // faint grid so the 28x28 structure reads
-        ctx.strokeStyle = 'rgba(51,58,64,0.25)';
+        ctx.strokeStyle = withAlpha(t.borderStrong, 0.25);
         ctx.lineWidth = 1;
         for (let i = 0; i <= this.size; i += 7) {
             ctx.beginPath();

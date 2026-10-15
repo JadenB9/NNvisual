@@ -3,7 +3,8 @@ import { MLP } from '../engine/mlp.js';
 import { fetchWeights } from '../engine/weights.js';
 import { fetchDataset, preprocessDrawing } from '../engine/mnist.js';
 import { DrawBox } from '../ui/drawbox.js';
-import { drawHeat } from '../ui/heat.js';
+import { drawHeat, repaintHeatmaps } from '../ui/heat.js';
+import { tokens, onThemeChange } from '../ui/theme.js';
 import { Bars } from '../ui/bars.js';
 import { LineChart } from '../ui/charts.js';
 import { Pipeline } from './mlp-pipeline.js';
@@ -39,8 +40,8 @@ const STORE_KEY = 'nnvisual-userdata-v1';
 // ---------- dom ----------
 const pipeline = new Pipeline($('pipeline'), $('inspector'), $('insp-heat'), $('insp-text'));
 const bars = new Bars($('bars'), [...Array(10).keys()].map(String));
-const lossChart = new LineChart($('chart-loss'), [{ color: '#86c3d6', label: 'loss' }]);
-const accChart = new LineChart($('chart-acc'), [{ color: '#6a9955', label: 'test acc' }], { yMax: 1 });
+const lossChart = new LineChart($('chart-loss'), [{ color: 'linkBlue', label: 'loss' }]);
+const accChart = new LineChart($('chart-acc'), [{ color: 'ok', label: 'test acc' }], { yMax: 1 });
 
 const draw = new DrawBox($('draw'), { onchange: onDrawChange });
 const dataDraw = new DrawBox($('data-draw'), { onchange: updateAddButton });
@@ -356,8 +357,9 @@ function drawBowl() {
     const h = canvas.height;
     ctx.clearRect(0, 0, w, h);
     ctx.font = '19px "Plex Mono", ui-monospace, monospace';
+    const t = tokens();
     if (!state.probe) {
-        ctx.fillStyle = '#5f5c55';
+        ctx.fillStyle = t.faint;
         ctx.textAlign = 'center';
         ctx.font = '15px "Plex Mono", ui-monospace, monospace';
         ctx.fillText('train an epoch to measure the', w / 2, h / 2 - 6);
@@ -372,7 +374,7 @@ function drawBowl() {
     const xAt = (a) => pad + ((a - alphas[0]) / (alphas[alphas.length - 1] - alphas[0])) * (w - 2 * pad);
     const yAt = (v) => h - pad - ((v - lo) / (hi - lo || 1)) * (h - 2 * pad);
 
-    ctx.strokeStyle = '#86c3d6';
+    ctx.strokeStyle = t.linkBlue;
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     alphas.forEach((a, i) => {
@@ -400,11 +402,11 @@ function drawBowl() {
         ctx.textAlign = 'center';
         ctx.fillText(label, xAt(alpha), yAt(lerp(alpha)) - 12);
     };
-    mark(0, '#eeebe3', 'here');
+    mark(0, t.ink, 'here');
     const ghostLr = parseFloat($('bowl-lr').dataset.value || state.lr);
-    mark(ghostLr, '#6a9955', `step lr=${ghostLr.toFixed(2)}`);
+    mark(ghostLr, t.ok, `step lr=${ghostLr.toFixed(2)}`);
 
-    ctx.fillStyle = '#5f5c55';
+    ctx.fillStyle = t.faint;
     ctx.textAlign = 'left';
     ctx.fillText('→ along the gradient', pad, h - 6);
 }
@@ -723,3 +725,15 @@ $('import-data').addEventListener('click', () => {
 });
 
 window.addEventListener('resize', () => pipeline.draw());
+
+// a theme switch repaints every canvas in the new palette
+onThemeChange(() => {
+    if (!state.net) return;
+    repaintHeatmaps();
+    draw.render();
+    dataDraw.render();
+    lossChart.draw();
+    accChart.draw();
+    drawBowl();
+    pipeline.draw();
+});

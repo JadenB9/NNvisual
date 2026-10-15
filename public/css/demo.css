@@ -241,7 +241,7 @@
     padding: 10px;
     display: none;
     max-width: 240px;
-    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 10px 26px var(--shadow);
 }
 
 .inspector.show { display: block; }
@@ -260,7 +260,7 @@
 .load-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(14, 16, 17, 0.88);
+    background: var(--overlay);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -318,6 +318,7 @@
 @media (max-width: 640px) {
     .topbar { flex-wrap: wrap; gap: 6px 12px; padding: 10px 16px; }
     .page-chip { white-space: normal; }
-    #net-status { flex-basis: 100%; text-align: left; }
+    .top-end { flex-basis: 100%; justify-content: space-between; }
+    #net-status { text-align: left; }
     .demo { padding: 12px; }
 }

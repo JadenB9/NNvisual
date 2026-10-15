@@ -1,11 +1,10 @@
 import { drawHeat } from '../ui/heat.js';
+import { tokens, withAlpha } from '../ui/theme.js';
 
 // Renders the whole forward pass: input grid -> unrolled 784 strip -> layer
 // columns -> output digits. Everything drawn is read straight off the last
-// real forward pass (acts) or the last real backward pass (grads).
-const POS = '#6a9955';
-const NEG = '#c25b4e';
-const INK = '#eeebe3';
+// real forward pass (acts) or the last real backward pass (grads). Colors are
+// the theme tokens: ok/err for weight sign, ink for activation.
 
 export class Pipeline {
     constructor(canvas, inspector, inspHeat, inspText) {
@@ -151,6 +150,7 @@ export class Pipeline {
         const ctx = this.canvas.getContext('2d');
         ctx.setTransform(g.dpr, 0, 0, g.dpr, 0, 0);
         ctx.clearRect(0, 0, g.w, g.h);
+        const t = tokens();
 
         const net = this.net;
         const acts = this.acts;
@@ -211,9 +211,9 @@ export class Pipeline {
         if (this.pulse < 1) {
             const x = g.stripX + this.pulse * (g.xs[sizes.length - 1] - g.stripX);
             const grad = ctx.createLinearGradient(x - 30, 0, x + 30, 0);
-            grad.addColorStop(0, 'rgba(238,235,227,0)');
-            grad.addColorStop(0.5, 'rgba(238,235,227,0.10)');
-            grad.addColorStop(1, 'rgba(238,235,227,0)');
+            grad.addColorStop(0, withAlpha(t.ink, 0));
+            grad.addColorStop(0.5, withAlpha(t.ink, 0.10));
+            grad.addColorStop(1, withAlpha(t.ink, 0));
             ctx.fillStyle = grad;
             ctx.fillRect(x - 30, 20, 60, g.h - 40);
         }
@@ -232,14 +232,14 @@ export class Pipeline {
                 const v = vals ? Math.abs(vals[i]) / peak : 0;
                 ctx.beginPath();
                 ctx.arc(x, y, radius, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(238,235,227,${0.06 + v * 0.85})`;
+                ctx.fillStyle = withAlpha(t.ink, 0.06 + v * 0.85);
                 ctx.fill();
                 ctx.strokeStyle = this.hover && this.hover.layer === l && this.hover.index === i
-                    ? INK : '#333a40';
+                    ? t.ink : t.borderStrong;
                 ctx.lineWidth = this.hover && this.hover.layer === l && this.hover.index === i ? 2 : 1.2;
                 ctx.stroke();
                 if (l === sizes.length - 1) {
-                    ctx.fillStyle = '#8f8b83';
+                    ctx.fillStyle = t.muted;
                     ctx.textAlign = 'left';
                     ctx.textBaseline = 'middle';
                     ctx.fillText(String(i), x + radius + 6, y);
@@ -248,7 +248,7 @@ export class Pipeline {
         }
 
         // column captions
-        ctx.fillStyle = '#5f5c55';
+        ctx.fillStyle = t.faint;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'alphabetic';
         // short captions when the columns sit too close for the long ones
@@ -275,7 +275,7 @@ export class Pipeline {
             let gm = Math.abs(gv) / (this.gradPeak(gl) || 1e-9);
             gm = Math.min(1, gm);
             if (gm < 0.03) { this.plainEdge(ctx, x0, y0, x1, y1, w, m * 0.3); return; }
-            ctx.strokeStyle = gv <= 0 ? POS : NEG; // weight moves opposite the gradient
+            ctx.strokeStyle = gv <= 0 ? tokens().ok : tokens().err; // weight moves opposite the gradient
             ctx.globalAlpha = 0.15 + 0.8 * gm * Math.min(1, local);
             ctx.lineWidth = 0.6 + 2.6 * gm;
             ctx.beginPath();
@@ -289,7 +289,8 @@ export class Pipeline {
     }
 
     plainEdge(ctx, x0, y0, x1, y1, w, m) {
-        ctx.strokeStyle = w >= 0 ? POS : NEG;
+        const t = tokens();
+        ctx.strokeStyle = w >= 0 ? t.ok : t.err;
         ctx.globalAlpha = 0.08 + 0.8 * Math.min(1, m);
         ctx.lineWidth = 0.5 + 2.2 * Math.min(1, m);
         ctx.beginPath();
@@ -313,21 +314,22 @@ export class Pipeline {
     }
 
     drawInputGrid(ctx, g) {
+        const t = tokens();
         const cell = g.gridSize / 28;
         const top = g.h / 2 - g.gridSize / 2;
         for (let y = 0; y < 28; y++) {
             for (let x = 0; x < 28; x++) {
                 const v = this.input[y * 28 + x];
                 if (v < 0.02) continue;
-                ctx.fillStyle = `rgba(238,235,227,${v})`;
+                ctx.fillStyle = withAlpha(t.ink, v);
                 ctx.fillRect(g.gridX + x * cell, top + y * cell, cell + 0.5, cell + 0.5);
             }
         }
-        ctx.strokeStyle = '#24292d';
+        ctx.strokeStyle = t.border;
         ctx.strokeRect(g.gridX, top, g.gridSize, g.gridSize);
 
         // unroll guides: corners of the grid flow to the strip's ends
-        ctx.strokeStyle = 'rgba(95,92,85,0.5)';
+        ctx.strokeStyle = withAlpha(t.faint, 0.5);
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(g.gridX + g.gridSize, top);
@@ -338,15 +340,16 @@ export class Pipeline {
     }
 
     drawStrip(ctx, g) {
+        const t = tokens();
         const n = 784;
         for (let i = 0; i < n; i++) {
             const v = this.input[i];
             if (v < 0.02) continue;
             const y = g.stripTop + (i / (n - 1)) * g.stripH;
-            ctx.fillStyle = `rgba(238,235,227,${0.25 + v * 0.75})`;
+            ctx.fillStyle = withAlpha(t.ink, 0.25 + v * 0.75);
             ctx.fillRect(g.stripX - 3, y - 0.6, 7, 1.4);
         }
-        ctx.strokeStyle = '#333a40';
+        ctx.strokeStyle = t.borderStrong;
         ctx.strokeRect(g.stripX - 4.5, g.stripTop - 2, 10, g.stripH + 4);
     }
 

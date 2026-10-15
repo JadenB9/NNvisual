@@ -1,7 +1,8 @@
 import { fetchWeights } from '../engine/weights.js';
 import { Transformer } from '../engine/transformer.js';
 import { mulberry32 } from '../engine/rng.js';
-import { drawHeat } from '../ui/heat.js';
+import { drawHeat, repaintHeatmaps } from '../ui/heat.js';
+import { tokens, hexToRgb, withAlpha, onThemeChange } from '../ui/theme.js';
 import { Bars } from '../ui/bars.js';
 import { nucleus, argmax, rankOf, keptCount } from './sampling.js';
 import { segButton, showLoadError } from '../ui/controls.js';
@@ -38,6 +39,7 @@ const state = {
 
 let nextBars = null;
 let highlightEmb = () => {};   // assigned by buildEmbMap
+let redrawEmb = () => {};      // assigned by buildEmbMap
 
 // The vocabulary contains "&" and "'", so page text is built from nodes
 // rather than innerHTML.
@@ -294,13 +296,16 @@ function renderAttn() {
     off.height = T;
     const octx = off.getContext('2d');
     const img = octx.createImageData(T, T);
+    const t = tokens();
+    const bg = hexToRgb(t.bg);
+    const ink = hexToRgb(t.ink);
     let k = 0;
     for (let i = 0; i < T; i++) {
         for (let j = 0; j < T; j++) {
             const v = Math.min(1, probs[i * T + j] * 2.2);
-            img.data[k++] = 14 + (238 - 14) * v;
-            img.data[k++] = 16 + (235 - 16) * v;
-            img.data[k++] = 17 + (227 - 17) * v;
+            img.data[k++] = bg[0] + (ink[0] - bg[0]) * v;
+            img.data[k++] = bg[1] + (ink[1] - bg[1]) * v;
+            img.data[k++] = bg[2] + (ink[2] - bg[2]) * v;
             img.data[k++] = 255;
         }
     }
@@ -312,11 +317,11 @@ function renderAttn() {
 
     // selected row guide
     const cell = canvas.width / T;
-    ctx.strokeStyle = 'rgba(134,195,214,0.65)';
+    ctx.strokeStyle = withAlpha(t.linkBlue, 0.65);
     ctx.lineWidth = 1;
     ctx.strokeRect(0, state.selected * cell, canvas.width, cell);
     if (state.pair) {
-        ctx.strokeStyle = '#86c3d6';
+        ctx.strokeStyle = t.linkBlue;
         ctx.lineWidth = 2;
         ctx.strokeRect(state.pair[1] * cell, state.pair[0] * cell, cell, cell);
     }
@@ -337,6 +342,7 @@ function drawArcs() {
     const src = state.selected;
     const centers = chips.map((c) => c.offsetLeft + c.offsetWidth / 2);
     const y = canvas.height - 2;
+    const blue = tokens().linkBlue;
 
     const entries = [];
     for (let j = 0; j <= src; j++) entries.push([j, probs[src * T + j]]);
@@ -346,7 +352,7 @@ function drawArcs() {
         const x0 = centers[src];
         const x1 = centers[j];
         const lift = Math.min(56, 12 + Math.abs(x0 - x1) * 0.14);
-        ctx.strokeStyle = '#86c3d6';
+        ctx.strokeStyle = blue;
         ctx.globalAlpha = 0.25 + 0.7 * Math.min(1, p * 1.6);
         ctx.lineWidth = 0.8 + 5 * p;
         ctx.beginPath();
@@ -356,7 +362,7 @@ function drawArcs() {
     }
     ctx.globalAlpha = 1;
     // self-attention dot
-    ctx.fillStyle = '#86c3d6';
+    ctx.fillStyle = blue;
     ctx.globalAlpha = 0.3 + 0.7 * Math.min(1, probs[src * T + src] * 1.6);
     ctx.beginPath();
     ctx.arc(centers[src], y - 4, 3.4, 0, Math.PI * 2);
@@ -525,9 +531,10 @@ function buildEmbMap() {
         const h = canvas.height;
         ctx.clearRect(0, 0, w, h);
         const { sx, sy } = project();
+        const t = tokens();
 
         if (marked >= 0) {
-            ctx.strokeStyle = '#86c3d6';
+            ctx.strokeStyle = t.linkBlue;
             ctx.lineWidth = 1.5;
             ctx.beginPath();
             ctx.arc(sx(state.pca[marked][0]), sy(state.pca[marked][1]), 13, 0, Math.PI * 2);
@@ -539,16 +546,16 @@ function buildEmbMap() {
         ctx.textBaseline = 'middle';
         state.pca.forEach(([x, y], v) => {
             const ch = m.chars[v];
-            ctx.fillStyle = v === hover || v === marked ? '#eeebe3'
-                : /[a-z]/.test(ch) ? '#86c3d6'
-                : /[A-Z]/.test(ch) ? '#6a9955'
-                : /[0-9]/.test(ch) ? '#c2a24e'
-                : '#8f8b83';
+            ctx.fillStyle = v === hover || v === marked ? t.ink
+                : /[a-z]/.test(ch) ? t.linkBlue
+                : /[A-Z]/.test(ch) ? t.ok
+                : /[0-9]/.test(ch) ? t.gold
+                : t.muted;
             ctx.fillText(show(ch), sx(x), sy(y));
         });
 
         if (marked >= 0) {
-            ctx.fillStyle = '#86c3d6';
+            ctx.fillStyle = t.linkBlue;
             ctx.textAlign = 'left';
             ctx.font = '13px "Plex Mono", ui-monospace, monospace';
             ctx.fillText(`ringed: “${show(m.chars[marked])}”, the token selected at position ${markedPos}`, 12, 16);
@@ -562,7 +569,7 @@ function buildEmbMap() {
             }
             sims.sort((a, b) => b[1] - a[1]);
             const list = sims.slice(0, 5).map(([v, c]) => `${show(m.chars[v])} ${c.toFixed(2)}`).join('  ');
-            ctx.fillStyle = '#8f8b83';
+            ctx.fillStyle = t.muted;
             ctx.textAlign = 'left';
             ctx.fillText(`“${show(m.chars[hover])}” neighbors: ${list}`, 12, h - 14);
         }
@@ -575,7 +582,7 @@ function buildEmbMap() {
         draw();
     };
 
-    canvas.addEventListener('pointermove', (e) => {
+    const onPoint = (e) => {
         const r = canvas.getBoundingClientRect();
         const px = ((e.clientX - r.left) / r.width) * canvas.width;
         const py = ((e.clientY - r.top) / r.height) * canvas.height;
@@ -589,9 +596,12 @@ function buildEmbMap() {
             if (dd < bestD) { bestD = dd; best = v; }
         });
         if (best !== hover) { hover = best; draw(); }
-    });
+    };
+    canvas.addEventListener('pointermove', onPoint);
+    canvas.addEventListener('pointerdown', onPoint);
     canvas.addEventListener('pointerleave', () => { hover = -1; draw(); });
     draw();
+    redrawEmb = draw;
 }
 
 function cosine(m, a, b) {
@@ -670,17 +680,18 @@ function drawCos(a, b) {
         ctx.textAlign = 'center';
         ctx.fillText(label, x, y - 14);
     };
+    const t = tokens();
     const base = (Math.PI - theta) / 2;
-    arrow(base + theta, na, '#6a9955', show(m.chars[a]));
-    arrow(base, nb, '#c25b4e', show(m.chars[b]));
+    arrow(base + theta, na, t.ok, show(m.chars[a]));
+    arrow(base, nb, t.err, show(m.chars[b]));
 
     // the true angle between them
-    ctx.strokeStyle = '#5f5c55';
+    ctx.strokeStyle = t.faint;
     ctx.lineWidth = 1.4;
     ctx.beginPath();
     ctx.arc(cx, cy, 44, -(base + theta), -base);
     ctx.stroke();
-    ctx.fillStyle = '#8f8b83';
+    ctx.fillStyle = t.muted;
     ctx.font = '17px "Plex Mono", ui-monospace, monospace';
     ctx.textAlign = 'center';
     ctx.fillText(`${(theta * 180 / Math.PI).toFixed(0)}°`, cx, cy - 56);
@@ -763,3 +774,12 @@ $('speed').addEventListener('input', (e) => {
     $('speed-out').textContent = `${state.speed}/s`;
 });
 window.addEventListener('resize', drawArcs);
+
+// a theme switch repaints every canvas in the new palette
+onThemeChange(() => {
+    if (!state.model) return;
+    repaintHeatmaps();
+    renderAttn();
+    redrawEmb();
+    drawCos(parseInt($('cos-a').value, 10), parseInt($('cos-b').value, 10));
+});
