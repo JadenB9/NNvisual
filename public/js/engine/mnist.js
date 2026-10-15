@@ -34,10 +34,24 @@ export function parseDataset(buffer) {
     };
 }
 
+// The pixels are mostly zeros, so the gzipped copy next to each .bin is about a
+// fifth of the bytes. Browsers inflate it themselves (DecompressionStream);
+// one without that gets the plain file.
+export async function unpackDataset(buffer) {
+    const bytes = new Uint8Array(buffer);
+    if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+        const inflated = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+        return parseDataset(await new Response(inflated).arrayBuffer());
+    }
+    return parseDataset(buffer);
+}
+
 export async function fetchDataset(url, onProgress) {
-    const res = await fetch(url);
+    const canInflate = typeof DecompressionStream === 'function';
+    let res = canInflate ? await fetch(`${url}.gz`) : null;
+    if (!res || !res.ok) res = await fetch(url);
     if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-    if (!res.body || !onProgress) return parseDataset(await res.arrayBuffer());
+    if (!res.body || !onProgress) return unpackDataset(await res.arrayBuffer());
     const total = Number(res.headers.get('content-length')) || 0;
     const reader = res.body.getReader();
     const chunks = [];
@@ -52,7 +66,7 @@ export async function fetchDataset(url, onProgress) {
     const all = new Uint8Array(received);
     let off = 0;
     for (const c of chunks) { all.set(c, off); off += c.length; }
-    return parseDataset(all.buffer);
+    return unpackDataset(all.buffer);
 }
 
 // Bilinear resample a [sh,sw] grayscale block to [dh,dw].
