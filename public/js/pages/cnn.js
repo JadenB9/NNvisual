@@ -3,6 +3,8 @@ import { fetchDataset } from '../engine/mnist.js';
 import { ConvNet, conv2dForward } from '../engine/conv.js';
 import { drawHeat, repaintHeatmaps } from '../ui/heat.js';
 import { tokens, onThemeChange } from '../ui/theme.js';
+import { parseLink, buildLink, putLinkInBar, copyLink } from '../ui/link.js';
+import { bindKeys } from '../ui/keys.js';
 import { Bars } from '../ui/bars.js';
 import { initInputPanel } from '../ui/inputpanel.js';
 import { buildBrushPicker, makeClickable, prefersReducedMotion, showLoadError } from '../ui/controls.js';
@@ -33,6 +35,40 @@ const STAGE_INFO = {
 
 let panel = null;
 
+// what a shared link carries: the playground kernel, its normalize switch,
+// the scan kernel and the pre-relu view
+const LINK = {
+    kernel: { nums: [-99, 99, 9] },
+    norm: { oneOf: ['1'] },
+    scan: { int: [0, 7] },
+    prerelu: { oneOf: ['1'] },
+};
+
+function readLinkState() {
+    const got = parseLink(location.hash, LINK);
+    if (got.kernel && got.kernel.length === 9) state.playKernel = got.kernel;
+    if (got.norm) {
+        state.normalize = true;
+        $('kernel-norm').checked = true;
+    }
+    if (got.scan != null) state.scan.kernel = got.scan;
+    if (got.prerelu) {
+        state.preRelu = true;
+        $('pre-relu').checked = true;
+    }
+}
+
+function linkHash() {
+    const v = { kernel: state.playKernel.join(','), scan: String(state.scan.kernel) };
+    if (state.normalize) v.norm = '1';
+    if (state.preRelu) v.prerelu = '1';
+    return buildLink(v);
+}
+
+function syncLink() {
+    putLinkInBar(linkHash());
+}
+
 // ---------- boot ----------
 (async function boot() {
     const fill = $('load-fill');
@@ -62,6 +98,7 @@ let panel = null;
 
     buildStageCanvases();
     renderKernels();
+    readLinkState();
     buildScanPicker();
     buildKernelEditor();
 
@@ -298,6 +335,7 @@ $('pre-relu').addEventListener('change', (e) => {
     state.preRelu = e.target.checked;
     drawMaps();
     drawInspector();
+    syncLink();
 });
 
 // ---------- scan mode ----------
@@ -310,8 +348,8 @@ function buildScanPicker() {
         c.height = 3;
         c.style.width = '30px';
         c.style.height = '30px';
-        c.className = 'pix' + (k === 0 ? ' is-active' : '');
-        c.setAttribute('aria-pressed', String(k === 0));
+        c.className = 'pix' + (k === state.scan.kernel ? ' is-active' : '');
+        c.setAttribute('aria-pressed', String(k === state.scan.kernel));
         drawHeat(c, state.net.c1w.subarray(k * 9, k * 9 + 9), 3, 3, { signed: true });
         makeClickable(c, `scan with kernel ${k + 1}`, () => {
             state.scan.kernel = k;
@@ -321,6 +359,7 @@ function buildScanPicker() {
                 x.setAttribute('aria-pressed', String(x === c));
             });
             drawScan();
+            syncLink();
         });
         box.append(c);
     }
@@ -441,6 +480,7 @@ function buildKernelEditor() {
             state.playKernel[i] = Number.isFinite(v) ? v : 0;
             inp.value = String(state.playKernel[i]);
             runPlayground();
+            syncLink();
         });
         box.append(inp);
     }
@@ -455,6 +495,7 @@ function buildKernelEditor() {
             state.playKernel = PRESETS[name].slice();
             [...box.children].forEach((inp, i) => { inp.value = String(state.playKernel[i]); });
             runPlayground();
+            syncLink();
         });
         presets.append(b);
     }
@@ -490,6 +531,15 @@ function updateNormNote(peak) {
 $('kernel-norm').addEventListener('change', (e) => {
     state.normalize = e.target.checked;
     runPlayground();
+    syncLink();
+});
+$('copy-link').addEventListener('click', () => copyLink($('copy-link'), linkHash()));
+
+bindKeys({
+    s: () => $('scan-play').click(),
+    n: () => $('scan-step').click(),
+    r: () => $('scan-reset').click(),
+    c: () => panel && panel.box.clear(),
 });
 
 function runPlayground() {

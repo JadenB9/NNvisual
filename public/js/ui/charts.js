@@ -17,8 +17,9 @@ export class LineChart {
         this.draw();
     }
 
+    // clears the live run; a pinned run stays so the next run can be compared to it
     reset() {
-        for (const s of this.series) s.data = [];
+        this.series[0].data = [];
         this.draw();
     }
 

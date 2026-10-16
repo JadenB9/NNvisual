@@ -5,6 +5,8 @@ import { fetchDataset, preprocessDrawing } from '../engine/mnist.js';
 import { DrawBox } from '../ui/drawbox.js';
 import { drawHeat, repaintHeatmaps } from '../ui/heat.js';
 import { tokens, onThemeChange } from '../ui/theme.js';
+import { parseLink, buildLink, putLinkInBar, copyLink } from '../ui/link.js';
+import { bindKeys } from '../ui/keys.js';
 import { Bars } from '../ui/bars.js';
 import { LineChart } from '../ui/charts.js';
 import { Pipeline } from './mlp-pipeline.js';
@@ -36,6 +38,14 @@ const state = {
 };
 
 const STORE_KEY = 'nnvisual-userdata-v1';
+
+// what a shared link carries: the architecture and the two training dials
+const LINK = {
+    layers: { ints: [2, 48, 3] },
+    lr: { oneOf: ['0.01', '0.05', '0.1', '0.3', '1'] },
+    batch: { oneOf: ['16', '32', '64'] },
+};
+let pinned = null;   // description of the run pinned on the charts
 
 // ---------- dom ----------
 const pipeline = new Pipeline($('pipeline'), $('inspector'), $('insp-heat'), $('insp-text'));
@@ -78,6 +88,7 @@ function updateAddButton() {
 
     loadUserData();
     buildRefNet();
+    readLinkState();
     buildBrushPicker($('brush-pick'), (sigma) => {
         draw.setBrush(sigma);
         dataDraw.setBrush(sigma);
@@ -106,6 +117,33 @@ function freshNet() {
     resetTrainingState();
 }
 
+// ---------- shareable settings ----------
+// Fresh nets and the epoch shuffle are seeded, so two people opening the same
+// link and pressing "1 epoch" see the same loss curve.
+function readLinkState() {
+    const got = parseLink(location.hash, LINK);
+    if (got.lr) {
+        $('lr').value = got.lr;
+        state.lr = parseFloat(got.lr);
+    }
+    if (got.batch) {
+        $('batch').value = got.batch;
+        state.batch = parseInt(got.batch, 10);
+    }
+    if (got.layers && JSON.stringify(got.layers) !== JSON.stringify(state.hiddenSizes)) {
+        state.hiddenSizes = got.layers;
+        freshNet();
+    }
+}
+
+function linkHash() {
+    return buildLink({ layers: state.hiddenSizes.join(','), lr: $('lr').value, batch: $('batch').value });
+}
+
+function syncLink() {
+    putLinkInBar(linkHash());
+}
+
 function resetTrainingState() {
     state.epoch = 0;
     state.cursor = 0;
@@ -116,6 +154,7 @@ function resetTrainingState() {
     $('train-note').textContent = '';
     lossChart.reset();
     accChart.reset();
+    $('pin-run').disabled = true;
     $('shape-note').textContent = state.net.sizes.join(' → ');
     $('bowl-lr-out').textContent = state.lr.toFixed(2);
     renderWeightGallery();
@@ -129,6 +168,7 @@ function resetTrainingState() {
 function onDrawChange(value) {
     state.input = preprocessDrawing(value);
     drawHeat($('preview'), state.input, 28, 28, { max: 1 });
+    $('export-png').disabled = !state.input.some((v) => v > 0.02);
     classify(true);
 }
 
@@ -263,9 +303,49 @@ function endOfEpoch() {
     const acc = testAccuracy();
     lossChart.push(meanLoss);
     accChart.push(acc);
+    $('pin-run').disabled = false;
     if (state.epoch % 2 === 0) renderWeightGallery();
     probeLoss();
     updateStatus();
+}
+
+// one minibatch of SGD, then the backward pass that produced it, replayed
+function stepBatch() {
+    if (trainingSet().count === 0) {
+        $('data-note').textContent = 'no examples yet — draw some digits below first.';
+        return;
+    }
+    setPlaying(false);
+    const n = fillTrainBatch(batchX, batchY, state.batch);
+    if (n === 0) return;
+    lastLoss = state.net.trainBatch(batchX, batchY, n, state.lr);
+    epochLosses.push(lastLoss);
+    state.lastBatch = { x: batchX.slice(0, n * 784), y: batchY.slice(0, n), n };
+    state.usingRef = false;
+    if (state.cursor >= trainingSet().count) endOfEpoch();
+    else probeLoss();
+    classify();
+    updateStats();
+    updateStatus();
+    if (!prefersReducedMotion()) pipeline.startBackprop();
+    $('train-note').textContent = `one batch of ${n}: loss ${lastLoss.toFixed(3)} — the sweep through the diagram is that batch's real gradients.`;
+}
+
+// keep this run's curves on the charts so the next run can be compared to it
+function togglePin() {
+    if (pinned) {
+        lossChart.unpin();
+        accChart.unpin();
+        pinned = null;
+    } else {
+        if (!lossChart.pin('pinned')) return;
+        accChart.pin('pinned');
+        pinned = `lr ${state.lr} · ${state.net.sizes.slice(1, -1).join('→')} hidden · batch ${state.batch} · ${state.epoch} epochs`;
+    }
+    $('pin-run').textContent = pinned ? 'unpin' : 'pin this run';
+    $('pin-note').textContent = pinned
+        ? `pinned (quiet line): ${pinned}. Change something, train again, and compare.`
+        : 'pin a run after it has trained, then change the learning rate or the layers and train again — both curves stay on the charts.';
 }
 
 function testAccuracy() {
@@ -445,6 +525,7 @@ function renderLayerEditor() {
                 state.hiddenSizes[idx]--;
                 renderLayerEditor();
                 freshNet();
+                syncLink();
             }
         });
         const value = document.createElement('span');
@@ -455,6 +536,7 @@ function renderLayerEditor() {
                 state.hiddenSizes[idx]++;
                 renderLayerEditor();
                 freshNet();
+                syncLink();
             }
         });
         chip.append(label, minus, value, plus);
@@ -462,6 +544,30 @@ function renderLayerEditor() {
     });
     const refSizes = state.ref.meta.sizes.slice(1, -1);
     $('load-ref').disabled = JSON.stringify(state.hiddenSizes) !== JSON.stringify(refSizes);
+}
+
+// the 28x28 the network sees, as a png in MNIST's own convention: white ink on black
+function exportPng() {
+    const c = document.createElement('canvas');
+    c.width = 28;
+    c.height = 28;
+    const ctx = c.getContext('2d');
+    const img = ctx.createImageData(28, 28);
+    for (let i = 0; i < 784; i++) {
+        const v = Math.round(state.input[i] * 255);
+        img.data[i * 4] = v;
+        img.data[i * 4 + 1] = v;
+        img.data[i * 4 + 2] = v;
+        img.data[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    c.toBlob((blob) => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `digit-${$('pred').textContent}-28x28.png`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    }, 'image/png');
 }
 
 function mkBtn(text, label, fn) {
@@ -599,11 +705,15 @@ $('step-epoch').addEventListener('click', () => {
     state.stopAtEpochEnd = true;
     setPlaying(true);
 });
+$('step-batch').addEventListener('click', stepBatch);
 $('reset-net').addEventListener('click', freshNet);
 $('load-ref').addEventListener('click', buildRefNet);
+$('pin-run').addEventListener('click', togglePin);
+$('export-png').addEventListener('click', exportPng);
+$('copy-link').addEventListener('click', () => copyLink($('copy-link'), linkHash()));
 
-$('lr').addEventListener('change', (e) => { state.lr = parseFloat(e.target.value); });
-$('batch').addEventListener('change', (e) => { state.batch = parseInt(e.target.value, 10); });
+$('lr').addEventListener('change', (e) => { state.lr = parseFloat(e.target.value); syncLink(); });
+$('batch').addEventListener('change', (e) => { state.batch = parseInt(e.target.value, 10); syncLink(); });
 $('source').addEventListener('change', (e) => {
     state.source = e.target.value;
     state.order = [];
@@ -616,6 +726,7 @@ $('add-layer').addEventListener('click', () => {
         state.hiddenSizes.push(8);
         renderLayerEditor();
         freshNet();
+        syncLink();
     }
 });
 $('remove-layer').addEventListener('click', () => {
@@ -623,7 +734,16 @@ $('remove-layer').addEventListener('click', () => {
         state.hiddenSizes.pop();
         renderLayerEditor();
         freshNet();
+        syncLink();
     }
+});
+
+bindKeys({
+    t: () => $('train').click(),
+    e: () => $('step-epoch').click(),
+    b: () => $('step-batch').click(),
+    p: () => $('replay-bp').click(),
+    c: () => draw.clear(),
 });
 
 $('replay-bp').addEventListener('click', () => {

@@ -6,12 +6,26 @@ import { tokens, hexToRgb, withAlpha, onThemeChange } from '../ui/theme.js';
 import { Bars } from '../ui/bars.js';
 import { nucleus, argmax, rankOf, keptCount } from './sampling.js';
 import { segButton, showLoadError } from '../ui/controls.js';
+import { parseLink, buildLink, copyLink } from '../ui/link.js';
+import { bindKeys } from '../ui/keys.js';
 
 const $ = (id) => document.getElementById(id);
 const show = (ch) => (ch === '\n' ? '⏎' : ch === ' ' ? '␣' : ch);
 
 const MEAN = -1;               // head picker value for "average of this layer's heads"
 const FALLBACK_PROMPT = 'ROMEO:';
+
+// what a shared link carries: the prompt, the sampling dials, the seed and how
+// many tokens to regrow with them
+const LINK = {
+    prompt: { text: 64 },
+    temp: { num: [0.2, 1.6] },
+    topk: { oneOf: ['0', '5', '10', '20'] },
+    topp: { oneOf: ['0', '0.95', '0.9', '0.8'] },
+    greedy: { oneOf: ['1'] },
+    seed: { int: [1, 999999] },
+    n: { int: [0, 400] },
+};
 
 const state = {
     model: null,
@@ -33,7 +47,8 @@ const state = {
     lastLogits: null,  // raw logits behind it, before temperature
     sampled: null,     // token drawn from lastProbs, or null if nothing was drawn from it
     attnCache: null,
-    rand: mulberry32(Date.now() & 0xffffff),
+    seed: 0,           // every reset draws a new one; a link carries it
+    rand: null,
     pca: null,
 };
 
@@ -81,14 +96,57 @@ function setLine(el, parts) {
     computePca();
     buildEmbMap();
     buildCosExplorer();
-    resetText();
+    const link = readLinkState();
+    resetText(link.seed);
+    // a shared link: regrow the same tokens from the same seed
+    for (let i = 0; i < (link.n || 0); i++) advance();
+    if (link.n) refresh(true);
     requestAnimationFrame(loop);
 })();
 
+// ---------- shareable settings ----------
+function readLinkState() {
+    const got = parseLink(location.hash, LINK);
+    if (got.prompt != null) {
+        $('prompt').value = got.prompt;
+        syncPreset();
+    }
+    if (got.temp != null) {
+        state.temperature = got.temp;
+        $('temp').value = String(got.temp);
+        $('temp-out').textContent = got.temp.toFixed(1);
+    }
+    if (got.topk) {
+        state.topK = parseInt(got.topk, 10);
+        $('topk').value = got.topk;
+    }
+    if (got.topp) {
+        state.topP = parseFloat(got.topp);
+        $('topp').value = got.topp;
+    }
+    if (got.greedy) setGreedy(true);
+    return got;
+}
+
+function linkHash() {
+    const v = {
+        prompt: $('prompt').value,
+        temp: state.temperature.toFixed(1),
+        topk: String(state.topK),
+        topp: String(state.topP),
+        seed: String(state.seed),
+        n: String(Math.min(400, state.tokens.length - state.promptLen)),
+    };
+    if (state.greedy) v.greedy = '1';
+    return buildLink(v);
+}
+
 // ---------- generation ----------
-function resetText() {
+function resetText(seed = null) {
     const m = state.model;
     if (!m) return;
+    state.seed = seed || 1 + Math.floor(Math.random() * 999999);
+    state.rand = mulberry32(state.seed);
     const typed = [...$('prompt').value];
     let tokens = m.encode($('prompt').value);
     const note = $('prompt-note');
@@ -125,8 +183,8 @@ function distribution() {
     return { probs: state.greedy ? probs : nucleus(probs, state.topP), logits, fwd };
 }
 
-function stepToken() {
-    if (!state.model || !state.tokens.length) return;
+// sample one token into the sequence without drawing anything
+function advance() {
     const { probs, logits, fwd } = distribution();
     const tok = state.greedy ? argmax(probs) : state.model.sample(probs, state.rand);
     state.tokens.push(tok);
@@ -134,6 +192,11 @@ function stepToken() {
     state.lastProbs = probs;
     state.lastLogits = logits;
     state.sampled = tok;
+}
+
+function stepToken() {
+    if (!state.model || !state.tokens.length) return;
+    advance();
     refresh(true);
 }
 
@@ -723,7 +786,8 @@ $('autoplay').addEventListener('click', () => {
     state.playing = !state.playing;
     $('autoplay').textContent = state.playing ? 'pause' : 'generate';
 });
-$('reset').addEventListener('click', resetText);
+$('reset').addEventListener('click', () => resetText());
+$('copy-link').addEventListener('click', () => copyLink($('copy-link'), linkHash()));
 $('preset').addEventListener('change', (e) => {
     if (e.target.value) $('prompt').value = e.target.value;
     resetText();
@@ -772,6 +836,12 @@ function setGreedy(on) {
 $('speed').addEventListener('input', (e) => {
     state.speed = parseInt(e.target.value, 10);
     $('speed-out').textContent = `${state.speed}/s`;
+});
+
+bindKeys({
+    g: () => $('autoplay').click(),
+    s: () => $('step').click(),
+    r: () => resetText(),
 });
 window.addEventListener('resize', drawArcs);
 

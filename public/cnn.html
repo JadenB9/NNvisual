@@ -143,6 +143,7 @@
                 <button class="run-btn" id="scan-play">scan</button>
                 <button class="mini-btn" id="scan-step">step</button>
                 <button class="mini-btn" id="scan-reset">reset</button>
+                <span class="note keys-inline">keys: <kbd>s</kbd> scan / pause &middot; <kbd>n</kbd> step &middot; <kbd>r</kbd> reset &middot; <kbd>c</kbd> clear the drawing</span>
                 <label class="field scan-speed"><span class="field-k">speed</span>
                     <input type="range" id="scan-speed" min="1" max="24" value="6">
                 </label>
@@ -160,6 +161,9 @@
                     <div class="btn-row" id="kernel-presets"></div>
                     <label class="toggle-row"><input type="checkbox" id="kernel-norm"> normalize</label>
                     <p class="note" id="norm-note">raw values are used as typed.</p>
+                    <div class="btn-row">
+                        <button class="mini-btn" id="copy-link" title="copy a link that reopens this page with this kernel, the normalize switch and the scan kernel">copy link</button>
+                    </div>
                 </div>
                 <div>
                     <canvas id="play-out" class="pix" width="156" height="156"></canvas>

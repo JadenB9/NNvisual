@@ -199,6 +199,8 @@
 
 .scan-speed { width: 130px; margin: 0 0 0 auto; }
 
+.keys-inline { margin: 0; align-self: center; }
+
 .scan-scrub { margin-top: 12px; }
 
 .scan-scrub .field-k { display: flex; gap: 8px; }

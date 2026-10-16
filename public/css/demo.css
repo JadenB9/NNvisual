@@ -104,6 +104,18 @@
     display: block;
 }
 
+/* keyboard shortcut hints */
+kbd {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 0 5px;
+}
+
 /* ---------- controls ---------- */
 
 .mini-btn, .run-btn, .seg-btn {

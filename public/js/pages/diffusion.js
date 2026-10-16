@@ -8,6 +8,7 @@ import { tokens, withAlpha, classColors, onThemeChange } from '../ui/theme.js';
 import { DrawBox } from '../ui/drawbox.js';
 import { createImageSampler } from './diffusion-i2i.js';
 import { buildBrushPicker, segButton, makeClickable, showLoadError } from '../ui/controls.js';
+import { bindKeys } from '../ui/keys.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -282,6 +283,14 @@ function buildReverse() {
     $('strength').addEventListener('input', syncStart);
 
     syncStart();
+
+    // only while the diffusion tab is the one showing
+    const onTab = (fn) => () => { if (!$('tab-diffusion').hidden) fn(); };
+    bindKeys({
+        g: onTab(() => $('generate').click()),
+        s: onTab(() => $('rev-step').click()),
+        x: onTab(() => $('grid-run').click()),
+    });
 }
 
 // ---------- shareable settings ----------

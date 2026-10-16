@@ -55,6 +55,7 @@
             <div class="btn-row">
                 <button class="mini-btn" id="clear">clear</button>
                 <button class="mini-btn" id="undo">undo</button>
+                <button class="mini-btn" id="export-png" disabled title="download the 28×28 the network sees as a png, mnist style">export png</button>
             </div>
             <div class="btn-row" id="brush-pick" aria-label="brush thickness"></div>
             <h3>or load a real test digit</h3>
@@ -128,9 +129,14 @@
                     <div class="btn-row">
                         <button class="run-btn" id="train">train</button>
                         <button class="mini-btn" id="step-epoch">1 epoch</button>
+                        <button class="mini-btn" id="step-batch" title="one minibatch of gradient descent, then replay its backward pass">1 batch</button>
                         <button class="mini-btn" id="reset-net">reset</button>
                     </div>
                     <p class="note" id="train-note" aria-live="polite"></p>
+                    <div class="btn-row">
+                        <button class="mini-btn" id="copy-link" title="copy a link that reopens this page with the same layers, learning rate and batch size">copy link</button>
+                    </div>
+                    <p class="note">keys: <kbd>t</kbd> train / pause &middot; <kbd>e</kbd> 1 epoch &middot; <kbd>b</kbd> 1 batch &middot; <kbd>p</kbd> replay backprop &middot; <kbd>c</kbd> clear the drawing</p>
                 </div>
                 <div class="chart-col">
                     <h3>loss</h3>
@@ -138,6 +144,10 @@
                     <h3>accuracy on held-out test digits</h3>
                     <canvas id="chart-acc" width="360" height="150"></canvas>
                     <div class="stat-lines" id="train-stats"></div>
+                    <div class="btn-row">
+                        <button class="mini-btn" id="pin-run" disabled title="keep this run's curves on the charts, then change something and train again to compare">pin this run</button>
+                    </div>
+                    <p class="note" id="pin-note">pin a run after it has trained, then change the learning rate or the layers and train again &mdash; both curves stay on the charts.</p>
                 </div>
                 <div class="concept-col">
                     <h3>gradient descent &mdash; the real loss curve under this step</h3>
