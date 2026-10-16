@@ -13,6 +13,20 @@
 <link rel="stylesheet" href="./css/base.css?v=2">
 <link rel="stylesheet" href="./css/demo.css?v=2">
 <link rel="stylesheet" href="./css/transformer.css?v=2">
+<!-- the data and every module the page imports start fetching with the html, instead of one import level at a time -->
+<link rel="preload" href="./data/weights/transformer-ref.bin" as="fetch" crossorigin>
+<link rel="modulepreload" href="./js/engine/f16.js">
+<link rel="modulepreload" href="./js/engine/rng.js">
+<link rel="modulepreload" href="./js/engine/tensor.js">
+<link rel="modulepreload" href="./js/engine/transformer.js">
+<link rel="modulepreload" href="./js/engine/weights.js">
+<link rel="modulepreload" href="./js/pages/sampling.js">
+<link rel="modulepreload" href="./js/ui/bars.js">
+<link rel="modulepreload" href="./js/ui/controls.js">
+<link rel="modulepreload" href="./js/ui/heat.js">
+<link rel="modulepreload" href="./js/ui/keys.js">
+<link rel="modulepreload" href="./js/ui/link.js">
+<link rel="modulepreload" href="./js/ui/theme.js">
 </head>
 <body>
 
