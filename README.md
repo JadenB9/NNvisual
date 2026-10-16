@@ -38,6 +38,33 @@ computed live by models running in vanilla JavaScript.
   Sampling is deterministic, so **copy link** shares a URL
   (`#digit=5&seed=12&steps=15&guidance=2`) that regrows the exact same digit.
 
+## Small things that make it nicer
+
+- **Light and dark.** The sun/moon button in the top bar switches; the choice
+  is saved as `localStorage.theme` (the same key the rest of j4den.com uses)
+  and with nothing saved the page follows the device. Every canvas reads the
+  CSS tokens at draw time, so the digit pads, heatmaps, charts, attention
+  matrix and latent plane repaint in the new palette. `js/theme-boot.js`
+  runs in `<head>` so there is no flash of the wrong theme.
+- **Shareable links** on every demo, not just diffusion. The MLP page carries
+  its layers, learning rate and batch size (`#layers=24,12&lr=0.05&batch=64`
+  — fresh nets and the epoch shuffle are seeded, so two people opening the
+  same link and pressing *1 epoch* get the same loss curve); the CNN page
+  carries the playground kernel, normalize, the scan kernel and the pre-relu
+  view; the transformer page carries prompt, temperature, top-k, top-p,
+  greedy, the sampling seed and how many tokens to regrow, so
+  `#prompt=JULIET%3A&temp=1.2&topk=5&seed=42&n=30` reproduces the exact text.
+- **Compare two training runs.** *Pin this run* keeps the loss and accuracy
+  curves on the MLP charts as a quiet line while you change the learning rate
+  or the layers and train again.
+- **1 batch** on the MLP page does a single minibatch of SGD and then replays
+  that batch's real backward pass through the diagram.
+- **Export png** downloads the 28×28 the network sees, in MNIST's own
+  convention (white ink on black), ready to feed into your own model.
+- **Keyboard shortcuts** on every demo (listed next to the buttons): train,
+  step, generate, scan and reset without reaching for the mouse. They stay
+  quiet while you are typing in a field.
+
 Every page works at phone width with touch drawing, and the clickable
 canvases (sample digits, feature maps, the attention matrix, the denoising
 film, the latent plane) are reachable and operable from the keyboard.
@@ -50,12 +77,17 @@ film, the latent plane) are reachable and operable from the keyboard.
   dependency is ESLint.
 - **Models are trained offline, reproducibly** by the numpy scripts in
   `training/` (each gradient-checks itself before running), then shipped as
-  fp16 binaries in `public/data/weights/` with stratified MNIST subsets.
-- **CI proves the site tells the truth.** `tests/` holds 58 tests: numerical
+  fp16 binaries in `public/data/weights/` with stratified MNIST subsets. The
+  MNIST subsets are mostly zeros, so they also ship gzipped (`npm run
+  data:gzip`, a fifth of the bytes) and the browser inflates them itself;
+  each page preloads its data and modules so the fetches start with the HTML.
+- **CI proves the site tells the truth.** `tests/` holds 69 tests: numerical
   gradient checks, a conv reference implementation, transformer causality —
   and golden-fixture gates where the JS engine must reproduce the numpy
   trainers' outputs, clear accuracy thresholds on held-out digits, and
-  generate diffusion samples the shipped CNN recognizes.
+  generate diffusion samples the shipped CNN recognizes. The gzipped data is
+  pinned byte-for-byte to the plain files, and the link parser and theme
+  tokens have their own tests.
 
 ```sh
 npm run serve   # http://localhost:4173 — any static server works
@@ -69,7 +101,7 @@ npm run lint
 public/           the deployable site (static, self-contained)
   js/engine/      the math: tensor ops, mlp, conv, transformer, diffusion
   js/pages/       one controller per demo
-  js/ui/          draw box, heatmaps, bars, charts
+  js/ui/          draw box, heatmaps, bars, charts, theme tokens, links, keys
   data/           mnist subsets + fp16 model weights
 training/         numpy trainers + dataset packer (python3 + numpy only)
 tests/            engine tests + golden gates pinning JS to the trainers
